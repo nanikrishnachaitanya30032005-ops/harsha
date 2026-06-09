@@ -231,11 +231,225 @@ function getProgress() {
   }
 }
 
-function saveProgress(data) {
+/* ===== Supabase Initialization & State ===== */
+let supabaseClient = null;
+let currentUser = null;
+
+function initSupabase() {
+  const url = localStorage.getItem('skillboost-supabase-url') || (window.SUPABASE_CONFIG && window.SUPABASE_CONFIG.url);
+  const key = localStorage.getItem('skillboost-supabase-key') || (window.SUPABASE_CONFIG && window.SUPABASE_CONFIG.anonKey);
+  
+  if (url && key) {
+    try {
+      supabaseClient = window.supabase.createClient(url, key);
+    } catch (err) {
+      console.error('Failed to initialize Supabase client:', err);
+      supabaseClient = null;
+    }
+  } else {
+    supabaseClient = null;
+  }
+}
+
+async function checkAuthSession() {
+  if (!supabaseClient) return;
+  try {
+    const { data: { session }, error } = await supabaseClient.auth.getSession();
+    if (error) throw error;
+    if (session) {
+      currentUser = session.user;
+      await fetchAndMergeSupabaseProgress();
+    } else {
+      currentUser = null;
+    }
+  } catch (err) {
+    console.error('Error getting auth session:', err);
+  }
+}
+
+function setupAuthListener() {
+  if (!supabaseClient) return;
+  supabaseClient.auth.onAuthStateChange(async (event, session) => {
+    if (session) {
+      const isNewUser = !currentUser;
+      currentUser = session.user;
+      if (isNewUser) {
+        await uploadOfflineProgressToSupabase();
+        await fetchAndMergeSupabaseProgress();
+      }
+    } else {
+      currentUser = null;
+    }
+    updateAuthUI();
+  });
+}
+
+async function handleLogout() {
+  if (supabaseClient) {
+    try {
+      await supabaseClient.auth.signOut();
+    } catch (err) {
+      console.error('Error during sign out:', err);
+    }
+  }
+  currentUser = null;
+  localStorage.removeItem(STORAGE_KEY);
+  updateAuthUI();
+}
+
+/* ===== Sync Helper Functions ===== */
+function showSyncingState(isSyncing) {
+  const indicators = document.querySelectorAll('#syncStatusIndicator');
+  indicators.forEach(indicator => {
+    if (isSyncing) {
+      indicator.innerHTML = `<span class="sync-spinner"></span> <span class="sync-text">Syncing...</span>`;
+      indicator.className = 'sync-indicator';
+    }
+  });
+}
+
+function showSyncSuccess() {
+  const indicators = document.querySelectorAll('#syncStatusIndicator');
+  indicators.forEach(indicator => {
+    indicator.innerHTML = `<span class="status-dot" style="background-color:var(--success)"></span> <span class="sync-text" style="color:var(--success)">Synced</span>`;
+    indicator.className = 'sync-indicator';
+  });
+}
+
+function showSyncError() {
+  const indicators = document.querySelectorAll('#syncStatusIndicator');
+  indicators.forEach(indicator => {
+    indicator.innerHTML = `<span class="status-dot" style="background-color:var(--warning)"></span> <span class="sync-text" style="color:var(--warning)">Sync Error</span>`;
+    indicator.className = 'sync-indicator';
+  });
+}
+
+async function uploadOfflineProgressToSupabase() {
+  if (!supabaseClient || !currentUser) return;
+  const localData = getProgress();
+  const entries = Object.entries(localData);
+  if (entries.length === 0) return;
+
+  showSyncingState(true);
+  const upsertData = entries.map(([skillId, val]) => ({
+    user_id: currentUser.id,
+    skill_id: skillId,
+    progress_percent: val,
+    updated_at: new Date().toISOString()
+  }));
+
+  try {
+    const { error } = await supabaseClient
+      .from('skillboost_progress')
+      .upsert(upsertData, { onConflict: 'user_id,skill_id' });
+    if (error) throw error;
+    showSyncSuccess();
+  } catch (err) {
+    console.error('Error uploading offline progress:', err);
+    showSyncError();
+  }
+}
+
+async function fetchAndMergeSupabaseProgress() {
+  if (!supabaseClient || !currentUser) return;
+  showSyncingState(true);
+  try {
+    const { data, error } = await supabaseClient
+      .from('skillboost_progress')
+      .select('skill_id, progress_percent');
+    if (error) throw error;
+
+    const localData = getProgress();
+    let merged = { ...localData };
+    if (data && data.length > 0) {
+      data.forEach(row => {
+        merged[row.skill_id] = Math.max(localData[row.skill_id] || 0, row.progress_percent);
+      });
+    }
+    saveProgress(merged, false);
+    
+    // Re-render local progress sections if present
+    renderProgress();
+    showSyncSuccess();
+  } catch (err) {
+    console.error('Error fetching progress from Supabase:', err);
+    showSyncError();
+  }
+}
+
+async function syncAllProgressToSupabase(data) {
+  if (!supabaseClient || !currentUser) return;
+  showSyncingState(true);
+  const entries = Object.entries(data);
+  if (entries.length === 0) {
+    showSyncSuccess();
+    return;
+  }
+  const upsertData = entries.map(([skillId, val]) => ({
+    user_id: currentUser.id,
+    skill_id: skillId,
+    progress_percent: val,
+    updated_at: new Date().toISOString()
+  }));
+  try {
+    const { error } = await supabaseClient
+      .from('skillboost_progress')
+      .upsert(upsertData, { onConflict: 'user_id,skill_id' });
+    if (error) throw error;
+    showSyncSuccess();
+  } catch (err) {
+    console.error('Sync error:', err);
+    showSyncError();
+  }
+}
+
+function saveProgress(data, sync = true) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  if (sync && supabaseClient && currentUser) {
+    syncAllProgressToSupabase(data);
+  }
 }
 
 /* ===== Page Templates (HTML → JavaScript) ===== */
+function renderAuthNav() {
+  if (currentUser) {
+    const initial = currentUser.email ? currentUser.email.charAt(0).toUpperCase() : 'U';
+    return `
+      <div class="nav-user-container" id="navUserContainer">
+        <button class="nav-user-btn" id="navUserBtn" aria-label="User Menu">
+          <span class="nav-user-avatar">${initial}</span>
+          <span class="nav-user-arrow">▼</span>
+        </button>
+        <div class="nav-user-dropdown" id="navUserDropdown">
+          <div class="dropdown-header">
+            <div style="font-size:0.75rem;color:var(--text-muted)">Logged in as</div>
+            <div class="dropdown-user-email" title="${currentUser.email}">${currentUser.email}</div>
+            <div id="syncStatusIndicator" class="sync-indicator">
+              <span class="status-dot" style="background-color:var(--success)"></span> <span class="sync-text">Synced</span>
+            </div>
+          </div>
+          <button class="dropdown-item" id="openSettingsBtn">⚙️ Database Setup</button>
+          <button class="dropdown-item logout-btn" id="logoutBtn">🚪 Sign Out</button>
+        </div>
+      </div>
+    `;
+  } else {
+    const isConnected = !!supabaseClient;
+    const badgeText = isConnected ? 'Connected' : 'Configure DB';
+    const badgeClass = isConnected ? 'connected' : 'unconfigured';
+    return `
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <button class="btn btn-secondary" id="openSetupBtn" style="padding: 0.4rem 0.65rem; font-size: 0.75rem; font-weight: 500; height: 34px; border: 1px solid var(--border);" title="Database connection status">
+          <span class="status-badge ${badgeClass}" style="padding: 0; border: none; background: none; display: flex; align-items: center; gap: 0.35rem;">
+            <span class="status-dot"></span>${badgeText}
+          </span>
+        </button>
+        <button class="nav-cta btn" id="signInBtn" style="padding: 0.4rem 0.9rem; font-size: 0.85rem; height: 34px;">Sign In</button>
+      </div>
+    `;
+  }
+}
+
 function renderHeader() {
   const navItems = [
     { href: HASH('skills'), label: 'Skills' },
@@ -243,7 +457,7 @@ function renderHeader() {
     { href: HASH('quiz'), label: 'Quiz' },
     { href: HASH('progress'), label: 'Progress' },
     { href: HASH('resources'), label: 'Resources' },
-    { href: 'contact.html', label: 'Contact', cta: true, active: CURRENT_PAGE === 'contact' },
+    { href: 'contact.html', label: 'Contact', active: CURRENT_PAGE === 'contact' },
   ];
 
   return `
@@ -261,10 +475,16 @@ function renderHeader() {
         <ul class="nav-links" id="navLinks">
           ${navItems.map((item) => `
             <li>
-              <a href="${item.href}" class="${item.cta ? 'nav-cta' : ''}${item.active ? ' active' : ''}">${item.label}</a>
+              <a href="${item.href}" class="${item.active ? ' active' : ''}">${item.label}</a>
             </li>
           `).join('')}
+          <li class="mobile-auth-item" style="margin-top: 0.75rem; border-top: 1px solid var(--border); padding-top: 0.75rem; display: none;">
+            ${renderAuthNav()}
+          </li>
         </ul>
+        <div class="desktop-auth-container" style="display: flex; align-items: center;">
+          ${renderAuthNav()}
+        </div>
       </nav>
     </header>
   `;
@@ -643,6 +863,7 @@ function renderApp() {
 
   if (CURRENT_PAGE === 'contact') {
     app.innerHTML = renderContactPage();
+    initAuthEventListeners();
     return;
   }
 
@@ -652,6 +873,7 @@ function renderApp() {
     if (skillHtml) {
       document.title = `${getSkillById(skillId)?.name || 'Skill'} — SkillBoost`;
       app.innerHTML = skillHtml;
+      initAuthEventListeners();
       return;
     }
     window.location.hash = 'skills';
@@ -659,6 +881,7 @@ function renderApp() {
 
   document.title = 'SkillBoost — Student Skill Improvement';
   app.innerHTML = renderHomePage();
+  initAuthEventListeners();
 }
 
 function initHomePage() {
@@ -1006,18 +1229,417 @@ function initContactForm() {
   });
 }
 
-/* ===== Init ===== */
-document.addEventListener('DOMContentLoaded', () => {
+/* ===== Auth Modal UI & Event Handling ===== */
+function ensureModalInDOM() {
+  let modal = document.getElementById('authModalOverlay');
+  if (modal) return;
+
+  modal = document.createElement('div');
+  modal.id = 'authModalOverlay';
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="modalTitle">Account Access</h3>
+        <button class="modal-close-btn" id="modalCloseBtn">&times;</button>
+      </div>
+      <div class="modal-tabs" id="modalTabs">
+        <button class="modal-tab active" data-tab="signin">Sign In</button>
+        <button class="modal-tab" data-tab="signup">Sign Up</button>
+        <button class="modal-tab" data-tab="setup">Database Setup</button>
+      </div>
+      <div class="modal-body">
+        <!-- Sign In Pane -->
+        <div class="modal-pane active" id="pane-signin">
+          <form id="signInForm">
+            <div class="form-alert error" id="signInError" hidden></div>
+            <div class="form-group">
+              <label for="signInEmail">Email Address</label>
+              <input type="email" id="signInEmail" class="form-input" required placeholder="you@example.com">
+            </div>
+            <div class="form-group">
+              <label for="signInPassword">Password</label>
+              <input type="password" id="signInPassword" class="form-input" required placeholder="••••••••">
+            </div>
+            <button type="submit" class="btn btn-primary btn-full">Sign In</button>
+          </form>
+        </div>
+
+        <!-- Sign Up Pane -->
+        <div class="modal-pane" id="pane-signup">
+          <form id="signUpForm">
+            <div class="form-alert error" id="signUpError" hidden></div>
+            <div class="form-alert success" id="signUpSuccess" hidden></div>
+            <div class="form-group">
+              <label for="signUpEmail">Email Address</label>
+              <input type="email" id="signUpEmail" class="form-input" required placeholder="you@example.com">
+            </div>
+            <div class="form-group">
+              <label for="signUpPassword">Password</label>
+              <input type="password" id="signUpPassword" class="form-input" required placeholder="•••••••• (min 6 chars)">
+            </div>
+            <button type="submit" class="btn btn-primary btn-full">Create Account</button>
+          </form>
+        </div>
+
+        <!-- Setup Pane -->
+        <div class="modal-pane" id="pane-setup">
+          <div class="settings-description">
+            Connect to your Supabase project to securely store and sync your learning progress in the cloud.
+          </div>
+          <form id="setupForm">
+            <div class="form-alert error" id="setupError" hidden></div>
+            <div class="form-alert success" id="setupSuccess" hidden></div>
+            <div class="form-group">
+              <label for="setupUrl">Supabase URL</label>
+              <input type="url" id="setupUrl" class="form-input" required placeholder="https://xxxxxx.supabase.co">
+            </div>
+            <div class="form-group">
+              <label for="setupKey">Supabase Anon Key</label>
+              <input type="password" id="setupKey" class="form-input" required placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...">
+            </div>
+            <button type="submit" class="btn btn-primary btn-full">Save and Connect</button>
+          </form>
+
+          <div class="sql-container">
+            <div class="sql-container-header">
+              <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-muted)">Required Database Table SQL</span>
+              <button class="sql-copy-btn" id="copySqlBtn">Copy SQL</button>
+            </div>
+            <div class="sql-box" id="sqlBox">-- Copy and run in Supabase SQL Editor:
+create table if not exists public.skillboost_progress (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid references auth.users(id) on delete cascade not null,
+  skill_id text not null,
+  progress_percent integer not null default 0,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  unique(user_id, skill_id)
+);
+
+alter table public.skillboost_progress enable row level security;
+
+create policy "Allow users to view their own progress"
+  on public.skillboost_progress for select
+  using (auth.uid() = user_id);
+
+create policy "Allow users to insert their own progress"
+  on public.skillboost_progress for insert
+  with check (auth.uid() = user_id);
+
+create policy "Allow users to update their own progress"
+  on public.skillboost_progress for update
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  initModalEvents();
+}
+
+function openAuthModal(tabName = 'signin') {
+  const overlay = document.getElementById('authModalOverlay');
+  if (!overlay) return;
+
+  overlay.classList.add('open');
+
+  const tabs = document.querySelectorAll('.modal-tab');
+  const panes = document.querySelectorAll('.modal-pane');
+  
+  tabs.forEach(tab => {
+    if (tab.dataset.tab === tabName) {
+      tab.classList.add('active');
+    } else {
+      tab.classList.remove('active');
+    }
+  });
+
+  panes.forEach(pane => {
+    if (pane.id === `pane-${tabName}`) {
+      pane.classList.add('active');
+    } else {
+      pane.classList.remove('active');
+    }
+  });
+
+  const title = document.getElementById('modalTitle');
+  if (title) {
+    if (tabName === 'signin') title.textContent = 'Welcome Back';
+    else if (tabName === 'signup') title.textContent = 'Create Student Account';
+    else if (tabName === 'setup') title.textContent = 'Database Connection Setup';
+  }
+
+  if (tabName === 'setup') {
+    const setupUrl = document.getElementById('setupUrl');
+    const setupKey = document.getElementById('setupKey');
+    const errorDiv = document.getElementById('setupError');
+    const successDiv = document.getElementById('setupSuccess');
+    if (errorDiv) errorDiv.hidden = true;
+    if (successDiv) successDiv.hidden = true;
+    if (setupUrl && setupKey) {
+      setupUrl.value = localStorage.getItem('skillboost-supabase-url') || (window.SUPABASE_CONFIG && window.SUPABASE_CONFIG.url) || '';
+      setupKey.value = localStorage.getItem('skillboost-supabase-key') || (window.SUPABASE_CONFIG && window.SUPABASE_CONFIG.anonKey) || '';
+    }
+  } else if (tabName === 'signin') {
+    const errorDiv = document.getElementById('signInError');
+    if (errorDiv) errorDiv.hidden = true;
+  } else if (tabName === 'signup') {
+    const errorDiv = document.getElementById('signUpError');
+    const successDiv = document.getElementById('signUpSuccess');
+    if (errorDiv) errorDiv.hidden = true;
+    if (successDiv) successDiv.hidden = true;
+  }
+}
+
+function initModalEvents() {
+  const overlay = document.getElementById('authModalOverlay');
+  const closeBtn = document.getElementById('modalCloseBtn');
+  if (!overlay || !closeBtn) return;
+
+  closeBtn.addEventListener('click', () => {
+    overlay.classList.remove('open');
+  });
+
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) {
+      overlay.classList.remove('open');
+    }
+  });
+
+  const tabs = document.querySelectorAll('.modal-tab');
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      const tabName = tab.dataset.tab;
+      openAuthModal(tabName);
+    });
+  });
+
+  const copyBtn = document.getElementById('copySqlBtn');
+  const sqlBox = document.getElementById('sqlBox');
+  if (copyBtn && sqlBox) {
+    copyBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText(sqlBox.textContent)
+        .then(() => {
+          copyBtn.textContent = 'Copied!';
+          setTimeout(() => {
+            copyBtn.textContent = 'Copy SQL';
+          }, 2000);
+        })
+        .catch(err => {
+          console.error('Failed to copy SQL:', err);
+        });
+    });
+  }
+
+  const setupForm = document.getElementById('setupForm');
+  if (setupForm) {
+    setupForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const url = document.getElementById('setupUrl').value.trim();
+      const key = document.getElementById('setupKey').value.trim();
+      const errorDiv = document.getElementById('setupError');
+      const successDiv = document.getElementById('setupSuccess');
+
+      errorDiv.hidden = true;
+      successDiv.hidden = true;
+
+      if (!url || !key) {
+        errorDiv.textContent = 'Please provide both URL and Anon Key.';
+        errorDiv.hidden = false;
+        return;
+      }
+
+      try {
+        const client = window.supabase.createClient(url, key);
+        // Force a network request by calling select. This verifies the URL and API Key authenticity.
+        const { error } = await client.from('skillboost_progress').select('id').limit(1);
+
+        if (error) {
+          // If the error code indicates the relation does not exist, the URL/Key are correct but the table isn't created yet.
+          if (error.code === '42P01' || error.message?.includes('does not exist')) {
+            localStorage.setItem('skillboost-supabase-url', url);
+            localStorage.setItem('skillboost-supabase-key', key);
+            initSupabase();
+            
+            successDiv.innerHTML = `Connected! <strong>Note:</strong> Remember to run the SQL script in your Supabase SQL Editor to create the table.`;
+            successDiv.hidden = false;
+
+            setTimeout(() => {
+              overlay.classList.remove('open');
+              updateAuthUI();
+            }, 3500);
+            return;
+          }
+          throw error;
+        }
+
+        // Connection successful and table exists
+        localStorage.setItem('skillboost-supabase-url', url);
+        localStorage.setItem('skillboost-supabase-key', key);
+        initSupabase();
+        
+        successDiv.textContent = 'Database configured and connected successfully!';
+        successDiv.hidden = false;
+
+        setTimeout(() => {
+          overlay.classList.remove('open');
+          updateAuthUI();
+        }, 1500);
+      } catch (err) {
+        console.error('Supabase Setup error:', err);
+        errorDiv.textContent = `Connection test failed: Check your URL/Key. (${err.message || err})`;
+        errorDiv.hidden = false;
+      }
+    });
+  }
+
+  const signInForm = document.getElementById('signInForm');
+  if (signInForm) {
+    signInForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('signInEmail').value.trim();
+      const password = document.getElementById('signInPassword').value.trim();
+      const errorDiv = document.getElementById('signInError');
+
+      errorDiv.hidden = true;
+
+      if (!supabaseClient) {
+        errorDiv.textContent = 'Supabase is not configured yet. Please configure it in the Database Setup tab.';
+        errorDiv.hidden = false;
+        return;
+      }
+
+      try {
+        const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+
+        currentUser = data.user;
+        overlay.classList.remove('open');
+        updateAuthUI();
+      } catch (err) {
+        console.error('Sign In error:', err);
+        errorDiv.textContent = err.message || 'Authentication failed.';
+        errorDiv.hidden = false;
+      }
+    });
+  }
+
+  const signUpForm = document.getElementById('signUpForm');
+  if (signUpForm) {
+    signUpForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('signUpEmail').value.trim();
+      const password = document.getElementById('signUpPassword').value.trim();
+      const errorDiv = document.getElementById('signUpError');
+      const successDiv = document.getElementById('signUpSuccess');
+
+      errorDiv.hidden = true;
+      successDiv.hidden = true;
+
+      if (!supabaseClient) {
+        errorDiv.textContent = 'Supabase is not configured yet. Please configure it in the Database Setup tab.';
+        errorDiv.hidden = false;
+        return;
+      }
+
+      try {
+        const { data, error } = await supabaseClient.auth.signUp({ email, password });
+        if (error) throw error;
+
+        if (data.user && data.user.identities && data.user.identities.length === 0) {
+          errorDiv.textContent = 'An account already exists for this email. Try logging in.';
+          errorDiv.hidden = false;
+        } else {
+          successDiv.textContent = 'Registration successful! Check email or sign in directly.';
+          successDiv.hidden = false;
+          
+          if (data.session) {
+            currentUser = data.user;
+            setTimeout(() => {
+              overlay.classList.remove('open');
+              updateAuthUI();
+            }, 1500);
+          }
+        }
+      } catch (err) {
+        console.error('Sign Up error:', err);
+        errorDiv.textContent = err.message || 'Registration failed.';
+        errorDiv.hidden = false;
+      }
+    });
+  }
+}
+
+function initAuthEventListeners() {
+  ensureModalInDOM();
+
+  const signInButtons = document.querySelectorAll('#signInBtn');
+  signInButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      openAuthModal('signin');
+    });
+  });
+
+  const setupButtons = document.querySelectorAll('#openSetupBtn');
+  setupButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      openAuthModal('setup');
+    });
+  });
+
+  const userBtn = document.getElementById('navUserBtn');
+  const userContainer = document.getElementById('navUserContainer');
+  if (userBtn && userContainer) {
+    userBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      userContainer.classList.toggle('open');
+    });
+  }
+
+  // Close dropdown when clicking outside
+  document.addEventListener('click', (e) => {
+    if (userContainer && !userContainer.contains(e.target)) {
+      userContainer.classList.remove('open');
+    }
+  });
+
+  const logoutBtn = document.getElementById('logoutBtn');
+  if (logoutBtn) {
+    logoutBtn.addEventListener('click', async () => {
+      await handleLogout();
+    });
+  }
+
+  const openSettingsBtn = document.getElementById('openSettingsBtn');
+  if (openSettingsBtn) {
+    openSettingsBtn.addEventListener('click', () => {
+      openAuthModal('setup');
+    });
+  }
+}
+
+function updateAuthUI() {
+  navInitialized = false; // Allow nav to be re-initialized
   renderApp();
   initNav();
-  initRouter();
-
+  
   if (CURRENT_PAGE === 'contact') {
     initContactForm();
   } else if (getSkillIdFromHash()) {
-    window.scrollTo(0, 0);
     initSkillDetailPage();
   } else {
     initHomePage();
   }
+}
+
+/* ===== Init ===== */
+document.addEventListener('DOMContentLoaded', async () => {
+  initSupabase();
+  await checkAuthSession();
+  setupAuthListener();
+
+  updateAuthUI();
+  initRouter();
 });
