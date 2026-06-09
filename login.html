@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login — SkillBoost</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@600;700&display=swap" rel="stylesheet">
+  <style>
+    body { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--bg); }
+    .auth-container { width: min(100%, 460px); padding: 2rem; border-radius: 24px; background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow); }
+    .auth-header h1 { margin-bottom: 0.75rem; font-size: clamp(1.8rem, 2.5vw, 2.4rem); }
+    .auth-header p { color: var(--text-muted); margin-bottom: 1.5rem; }
+    .auth-tabs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem; margin-bottom: 1.5rem; }
+    .auth-tab { padding: 0.85rem 1rem; border: 1px solid var(--border); border-radius: 999px; background: transparent; color: var(--text); cursor: pointer; transition: var(--transition); }
+    .auth-tab.active { background: var(--bg-alt); border-color: transparent; color: #fff; }
+    .auth-form { display: none; }
+    .auth-form.active { display: block; }
+    .auth-footer { margin-top: 1.25rem; font-size: 0.95rem; color: var(--text-muted); text-align: center; }
+    .auth-footer a { color: var(--primary); }
+    .auth-links { display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; }
+  </style>
+</head>
+<body>
+  <div class="auth-container">
+    <div class="auth-header">
+      <h1>Login to SkillBoost</h1>
+      <p>Sign in or create an account with your Supabase project credentials. Your progress will sync automatically.</p>
+    </div>
+    <div class="auth-tabs" id="authTabs">
+      <button type="button" class="auth-tab active" data-tab="signin">Sign In</button>
+      <button type="button" class="auth-tab" data-tab="signup">Sign Up</button>
+    </div>
+    <div class="auth-forms">
+      <form id="signInForm" class="auth-form active">
+        <div class="form-group">
+          <label for="signInEmail">Email Address</label>
+          <input type="email" id="signInEmail" class="form-input" required placeholder="you@example.com">
+        </div>
+        <div class="form-group">
+          <label for="signInPassword">Password</label>
+          <input type="password" id="signInPassword" class="form-input" required placeholder="••••••••">
+        </div>
+        <div class="form-alert error" id="signInError" hidden></div>
+        <div class="form-alert success" id="signInSuccess" hidden></div>
+        <button type="submit" class="btn btn-primary btn-full">Sign In</button>
+      </form>
+
+      <form id="signUpForm" class="auth-form">
+        <div class="form-group">
+          <label for="signUpEmail">Email Address</label>
+          <input type="email" id="signUpEmail" class="form-input" required placeholder="you@example.com">
+        </div>
+        <div class="form-group">
+          <label for="signUpPassword">Password</label>
+          <input type="password" id="signUpPassword" class="form-input" required placeholder="•••••••• (min 6 chars)">
+        </div>
+        <div class="form-alert error" id="signUpError" hidden></div>
+        <div class="form-alert success" id="signUpSuccess" hidden></div>
+        <button type="submit" class="btn btn-primary btn-full">Create Account</button>
+      </form>
+    </div>
+
+    <div class="auth-footer">
+      <p>Need help? <a href="contact.html">Contact us</a>.</p>
+      <p><a href="index.html">Back to home</a></p>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/config.js"></script>
+  <script src="js/auth.js"></script>
+</body>
+</html>

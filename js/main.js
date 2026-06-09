@@ -446,6 +446,7 @@ function renderHeader() {
     { href: HASH('quiz'), label: 'Quiz' },
     { href: HASH('progress'), label: 'Progress' },
     { href: HASH('resources'), label: 'Resources' },
+    { href: 'login.html', label: 'Login' },
     { href: 'contact.html', label: 'Contact', active: CURRENT_PAGE === 'contact' },
   ];
 
