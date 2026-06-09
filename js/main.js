@@ -212,6 +212,16 @@ const STORAGE_KEY = 'skillboost-progress';
 const CURRENT_PAGE = window.location.pathname.includes('contact') ? 'contact' : 'home';
 const HASH = (id) => (CURRENT_PAGE === 'contact' ? `index.html#${id}` : `#${id}`);
 
+function getSkillIdFromHash() {
+  const hash = window.location.hash || '';
+  const match = hash.match(/^#skill\/([a-z0-9-]+)$/);
+  return match ? match[1] : null;
+}
+
+function getSkillById(id) {
+  return SKILLS.find((s) => s.id === id);
+}
+
 /* ===== Utilities ===== */
 function getProgress() {
   try {
@@ -498,18 +508,213 @@ function renderContactPage() {
   `;
 }
 
+function renderSkillDetailPage(skillId) {
+  const skill = getSkillById(skillId);
+  const detail = getSkillDetail(skillId);
+
+  if (!skill || !detail) {
+    return null;
+  }
+
+  const progress = getProgress()[skillId] || 0;
+
+  return `
+    ${renderHeader()}
+    <main class="skill-detail-main">
+      <section class="skill-detail-hero">
+        <div class="container">
+          <a href="#skills" class="skill-back-link">← Back to Skills</a>
+          <div class="skill-detail-hero-content">
+            <div class="skill-detail-icon">${skill.icon}</div>
+            <div>
+              <span class="skill-detail-badge">Skill Guide</span>
+              <h1>${skill.name}</h1>
+              <p class="skill-detail-tagline">${skill.desc}</p>
+              <div class="skill-detail-meta">
+                <span class="skill-progress-badge">${progress}% Complete</span>
+                <button class="btn btn-primary" id="startLearningBtn" data-skill="${skillId}">Start Learning</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="skill-detail-hero-bg"></div>
+      </section>
+
+      <section class="section">
+        <div class="container skill-detail-grid">
+          <div class="skill-detail-card skill-detail-card-wide">
+            <h2><span class="card-icon">📖</span> Overview</h2>
+            <p>${detail.overview}</p>
+          </div>
+          <div class="skill-detail-card skill-detail-card-wide">
+            <h2><span class="card-icon">⭐</span> Why It Matters</h2>
+            <p>${detail.importance}</p>
+          </div>
+          <div class="skill-detail-card">
+            <h2><span class="card-icon">🗺️</span> Learning Roadmap</h2>
+            <div class="skill-roadmap">
+              ${detail.roadmap.map((step, i) => `
+                <div class="skill-roadmap-step">
+                  <span class="skill-roadmap-num">${i + 1}</span>
+                  <div>
+                    <h4>${step.title}</h4>
+                    <p>${step.desc}</p>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+          <div class="skill-detail-card">
+            <h2><span class="card-icon">📌</span> Key Topics</h2>
+            <ul class="skill-topic-list">
+              ${detail.keyTopics.map((t) => `<li>${t}</li>`).join('')}
+            </ul>
+          </div>
+          <div class="skill-detail-card">
+            <h2><span class="card-icon">🛠️</span> Project Ideas</h2>
+            <div class="skill-project-list">
+              ${detail.projects.map((p) => `
+                <div class="skill-project-item">
+                  <h4>${p.title}</h4>
+                  <p>${p.desc}</p>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+          <div class="skill-detail-card">
+            <h2><span class="card-icon">💼</span> Career Opportunities</h2>
+            <div class="skill-tag-cloud">
+              ${detail.careers.map((c) => `<span class="skill-tag">${c}</span>`).join('')}
+            </div>
+          </div>
+          <div class="skill-detail-card">
+            <h2><span class="card-icon">❓</span> Interview Questions</h2>
+            <ol class="skill-interview-list">
+              ${detail.interviewQuestions.map((q) => `<li>${q}</li>`).join('')}
+            </ol>
+          </div>
+          <div class="skill-detail-card">
+            <h2><span class="card-icon">📚</span> Learning Resources</h2>
+            <div class="skill-resource-list">
+              ${detail.resources.map((r) => `
+                <a href="${r.url}" class="skill-resource-item" target="_blank" rel="noopener noreferrer">
+                  <span class="skill-resource-type">${r.type}</span>
+                  <span class="skill-resource-title">${r.title} →</span>
+                </a>
+              `).join('')}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section-alt" id="learning-levels">
+        <div class="container">
+          <div class="section-header">
+            <h2>Learning Levels</h2>
+            <p>Progress through Beginner, Intermediate, and Advanced stages.</p>
+          </div>
+          <div class="skill-levels-grid">
+            ${['beginner', 'intermediate', 'advanced'].map((level) => `
+              <div class="skill-level-card level-${level}">
+                <div class="skill-level-header">
+                  <span class="skill-level-icon">${level === 'beginner' ? '🌱' : level === 'intermediate' ? '🚀' : '🏆'}</span>
+                  <h3>${level.charAt(0).toUpperCase() + level.slice(1)}</h3>
+                </div>
+                <ul>
+                  ${detail.levels[level].topics.map((t) => `<li>${t}</li>`).join('')}
+                </ul>
+              </div>
+            `).join('')}
+          </div>
+          <div class="skill-detail-cta">
+            <button class="btn btn-primary btn-lg" id="startLearningBtn2" data-skill="${skillId}">Start Learning ${skill.name}</button>
+            <a href="index.html#progress" class="btn btn-secondary btn-lg">Track Your Progress</a>
+          </div>
+        </div>
+      </section>
+    </main>
+    ${renderFooter()}
+  `;
+}
+
 function renderApp() {
   const app = document.getElementById('app');
   if (!app) return;
 
-  app.innerHTML = CURRENT_PAGE === 'contact' ? renderContactPage() : renderHomePage();
+  if (CURRENT_PAGE === 'contact') {
+    app.innerHTML = renderContactPage();
+    return;
+  }
+
+  const skillId = getSkillIdFromHash();
+  if (skillId) {
+    const skillHtml = renderSkillDetailPage(skillId);
+    if (skillHtml) {
+      document.title = `${getSkillById(skillId)?.name || 'Skill'} — SkillBoost`;
+      app.innerHTML = skillHtml;
+      return;
+    }
+    window.location.hash = 'skills';
+  }
+
+  document.title = 'SkillBoost — Student Skill Improvement';
+  app.innerHTML = renderHomePage();
+}
+
+function initHomePage() {
+  renderSkills();
+  renderCareers();
+  renderQuiz();
+  renderProgress();
+  renderResources();
+}
+
+function initSkillDetailPage() {
+  const skillId = getSkillIdFromHash();
+  if (!skillId) return;
+
+  const startLearning = (id) => {
+    const data = getProgress();
+    if (!data[id] || data[id] === 0) {
+      data[id] = 10;
+      saveProgress(data);
+      const badge = document.querySelector('.skill-progress-badge');
+      if (badge) badge.textContent = '10% Complete';
+    }
+    document.getElementById('learning-levels')?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  document.getElementById('startLearningBtn')?.addEventListener('click', () => startLearning(skillId));
+  document.getElementById('startLearningBtn2')?.addEventListener('click', () => startLearning(skillId));
+}
+
+function initRouter() {
+  window.addEventListener('hashchange', () => {
+    navInitialized = false;
+    renderApp();
+    initNav();
+    if (CURRENT_PAGE === 'home') {
+      if (getSkillIdFromHash()) {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        initSkillDetailPage();
+      } else {
+        initHomePage();
+      }
+    }
+  });
 }
 
 /* ===== Navigation ===== */
+let navInitialized = false;
+
 function initNav() {
+  if (navInitialized) return;
+
   const toggle = document.getElementById('navToggle');
   const links = document.getElementById('navLinks');
   if (!toggle || !links) return;
+
+  navInitialized = true;
 
   toggle.addEventListener('click', () => {
     links.classList.toggle('open');
@@ -527,11 +732,12 @@ function renderSkills() {
 
   grid.innerHTML = SKILLS.map(
     (s) => `
-      <div class="skill-card" data-skill="${s.id}">
+      <a href="#skill/${s.id}" class="skill-card" data-skill="${s.id}">
         <div class="skill-icon">${s.icon}</div>
         <h3>${s.name}</h3>
         <p>${s.desc}</p>
-      </div>
+        <span class="skill-card-link">View Details →</span>
+      </a>
     `
   ).join('');
 }
@@ -804,14 +1010,14 @@ function initContactForm() {
 document.addEventListener('DOMContentLoaded', () => {
   renderApp();
   initNav();
+  initRouter();
 
-  if (CURRENT_PAGE === 'home') {
-    renderSkills();
-    renderCareers();
-    renderQuiz();
-    renderProgress();
-    renderResources();
-  } else {
+  if (CURRENT_PAGE === 'contact') {
     initContactForm();
+  } else if (getSkillIdFromHash()) {
+    window.scrollTo(0, 0);
+    initSkillDetailPage();
+  } else {
+    initHomePage();
   }
 });
