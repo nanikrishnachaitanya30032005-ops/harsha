@@ -428,24 +428,13 @@ function renderAuthNav() {
               <span class="status-dot" style="background-color:var(--success)"></span> <span class="sync-text">Synced</span>
             </div>
           </div>
-          <button class="dropdown-item" id="openSettingsBtn">⚙️ Database Setup</button>
           <button class="dropdown-item logout-btn" id="logoutBtn">🚪 Sign Out</button>
         </div>
       </div>
     `;
   } else {
-    const isConnected = !!supabaseClient;
-    const badgeText = isConnected ? 'Connected' : 'Configure DB';
-    const badgeClass = isConnected ? 'connected' : 'unconfigured';
     return `
-      <div style="display: flex; align-items: center; gap: 0.5rem;">
-        <button class="btn btn-secondary" id="openSetupBtn" style="padding: 0.4rem 0.65rem; font-size: 0.75rem; font-weight: 500; height: 34px; border: 1px solid var(--border);" title="Database connection status">
-          <span class="status-badge ${badgeClass}" style="padding: 0; border: none; background: none; display: flex; align-items: center; gap: 0.35rem;">
-            <span class="status-dot"></span>${badgeText}
-          </span>
-        </button>
-        <button class="nav-cta btn" id="signInBtn" style="padding: 0.4rem 0.9rem; font-size: 0.85rem; height: 34px;">Sign In</button>
-      </div>
+      <button class="nav-cta btn" id="signInBtn" style="padding: 0.4rem 0.9rem; font-size: 0.85rem; height: 34px;">Sign In</button>
     `;
   }
 }
@@ -1246,7 +1235,6 @@ function ensureModalInDOM() {
       <div class="modal-tabs" id="modalTabs">
         <button class="modal-tab active" data-tab="signin">Sign In</button>
         <button class="modal-tab" data-tab="signup">Sign Up</button>
-        <button class="modal-tab" data-tab="setup">Database Setup</button>
       </div>
       <div class="modal-body">
         <!-- Sign In Pane -->
@@ -1280,57 +1268,6 @@ function ensureModalInDOM() {
             </div>
             <button type="submit" class="btn btn-primary btn-full">Create Account</button>
           </form>
-        </div>
-
-        <!-- Setup Pane -->
-        <div class="modal-pane" id="pane-setup">
-          <div class="settings-description">
-            Connect to your Supabase project to securely store and sync your learning progress in the cloud.
-          </div>
-          <form id="setupForm">
-            <div class="form-alert error" id="setupError" hidden></div>
-            <div class="form-alert success" id="setupSuccess" hidden></div>
-            <div class="form-group">
-              <label for="setupUrl">Supabase URL</label>
-              <input type="url" id="setupUrl" class="form-input" required placeholder="https://xxxxxx.supabase.co">
-            </div>
-            <div class="form-group">
-              <label for="setupKey">Supabase Anon Key</label>
-              <input type="password" id="setupKey" class="form-input" required placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...">
-            </div>
-            <button type="submit" class="btn btn-primary btn-full">Save and Connect</button>
-          </form>
-
-          <div class="sql-container">
-            <div class="sql-container-header">
-              <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-muted)">Required Database Table SQL</span>
-              <button class="sql-copy-btn" id="copySqlBtn">Copy SQL</button>
-            </div>
-            <div class="sql-box" id="sqlBox">-- Copy and run in Supabase SQL Editor:
-create table if not exists public.skillboost_progress (
-  id uuid default gen_random_uuid() primary key,
-  user_id uuid references auth.users(id) on delete cascade not null,
-  skill_id text not null,
-  progress_percent integer not null default 0,
-  updated_at timestamp with time zone default timezone('utc'::text, now()) not null,
-  unique(user_id, skill_id)
-);
-
-alter table public.skillboost_progress enable row level security;
-
-create policy "Allow users to view their own progress"
-  on public.skillboost_progress for select
-  using (auth.uid() = user_id);
-
-create policy "Allow users to insert their own progress"
-  on public.skillboost_progress for insert
-  with check (auth.uid() = user_id);
-
-create policy "Allow users to update their own progress"
-  on public.skillboost_progress for update
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);</div>
-          </div>
         </div>
       </div>
     </div>
@@ -1368,21 +1305,9 @@ function openAuthModal(tabName = 'signin') {
   if (title) {
     if (tabName === 'signin') title.textContent = 'Welcome Back';
     else if (tabName === 'signup') title.textContent = 'Create Student Account';
-    else if (tabName === 'setup') title.textContent = 'Database Connection Setup';
   }
 
-  if (tabName === 'setup') {
-    const setupUrl = document.getElementById('setupUrl');
-    const setupKey = document.getElementById('setupKey');
-    const errorDiv = document.getElementById('setupError');
-    const successDiv = document.getElementById('setupSuccess');
-    if (errorDiv) errorDiv.hidden = true;
-    if (successDiv) successDiv.hidden = true;
-    if (setupUrl && setupKey) {
-      setupUrl.value = localStorage.getItem('skillboost-supabase-url') || (window.SUPABASE_CONFIG && window.SUPABASE_CONFIG.url) || '';
-      setupKey.value = localStorage.getItem('skillboost-supabase-key') || (window.SUPABASE_CONFIG && window.SUPABASE_CONFIG.anonKey) || '';
-    }
-  } else if (tabName === 'signin') {
+  if (tabName === 'signin') {
     const errorDiv = document.getElementById('signInError');
     if (errorDiv) errorDiv.hidden = true;
   } else if (tabName === 'signup') {
@@ -1416,85 +1341,6 @@ function initModalEvents() {
     });
   });
 
-  const copyBtn = document.getElementById('copySqlBtn');
-  const sqlBox = document.getElementById('sqlBox');
-  if (copyBtn && sqlBox) {
-    copyBtn.addEventListener('click', () => {
-      navigator.clipboard.writeText(sqlBox.textContent)
-        .then(() => {
-          copyBtn.textContent = 'Copied!';
-          setTimeout(() => {
-            copyBtn.textContent = 'Copy SQL';
-          }, 2000);
-        })
-        .catch(err => {
-          console.error('Failed to copy SQL:', err);
-        });
-    });
-  }
-
-  const setupForm = document.getElementById('setupForm');
-  if (setupForm) {
-    setupForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const url = document.getElementById('setupUrl').value.trim();
-      const key = document.getElementById('setupKey').value.trim();
-      const errorDiv = document.getElementById('setupError');
-      const successDiv = document.getElementById('setupSuccess');
-
-      errorDiv.hidden = true;
-      successDiv.hidden = true;
-
-      if (!url || !key) {
-        errorDiv.textContent = 'Please provide both URL and Anon Key.';
-        errorDiv.hidden = false;
-        return;
-      }
-
-      try {
-        const client = window.supabase.createClient(url, key);
-        // Force a network request by calling select. This verifies the URL and API Key authenticity.
-        const { error } = await client.from('skillboost_progress').select('id').limit(1);
-
-        if (error) {
-          // If the error code indicates the relation does not exist, the URL/Key are correct but the table isn't created yet.
-          if (error.code === '42P01' || error.message?.includes('does not exist')) {
-            localStorage.setItem('skillboost-supabase-url', url);
-            localStorage.setItem('skillboost-supabase-key', key);
-            initSupabase();
-            
-            successDiv.innerHTML = `Connected! <strong>Note:</strong> Remember to run the SQL script in your Supabase SQL Editor to create the table.`;
-            successDiv.hidden = false;
-
-            setTimeout(() => {
-              overlay.classList.remove('open');
-              updateAuthUI();
-            }, 3500);
-            return;
-          }
-          throw error;
-        }
-
-        // Connection successful and table exists
-        localStorage.setItem('skillboost-supabase-url', url);
-        localStorage.setItem('skillboost-supabase-key', key);
-        initSupabase();
-        
-        successDiv.textContent = 'Database configured and connected successfully!';
-        successDiv.hidden = false;
-
-        setTimeout(() => {
-          overlay.classList.remove('open');
-          updateAuthUI();
-        }, 1500);
-      } catch (err) {
-        console.error('Supabase Setup error:', err);
-        errorDiv.textContent = `Connection test failed: Check your URL/Key. (${err.message || err})`;
-        errorDiv.hidden = false;
-      }
-    });
-  }
-
   const signInForm = document.getElementById('signInForm');
   if (signInForm) {
     signInForm.addEventListener('submit', async (e) => {
@@ -1506,7 +1352,7 @@ function initModalEvents() {
       errorDiv.hidden = true;
 
       if (!supabaseClient) {
-        errorDiv.textContent = 'Supabase is not configured yet. Please configure it in the Database Setup tab.';
+        errorDiv.textContent = 'Database connection failed. Please refresh the page.';
         errorDiv.hidden = false;
         return;
       }
@@ -1539,7 +1385,7 @@ function initModalEvents() {
       successDiv.hidden = true;
 
       if (!supabaseClient) {
-        errorDiv.textContent = 'Supabase is not configured yet. Please configure it in the Database Setup tab.';
+        errorDiv.textContent = 'Database connection failed. Please refresh the page.';
         errorDiv.hidden = false;
         return;
       }
@@ -1582,13 +1428,6 @@ function initAuthEventListeners() {
     });
   });
 
-  const setupButtons = document.querySelectorAll('#openSetupBtn');
-  setupButtons.forEach(btn => {
-    btn.addEventListener('click', () => {
-      openAuthModal('setup');
-    });
-  });
-
   const userBtn = document.getElementById('navUserBtn');
   const userContainer = document.getElementById('navUserContainer');
   if (userBtn && userContainer) {
@@ -1609,13 +1448,6 @@ function initAuthEventListeners() {
   if (logoutBtn) {
     logoutBtn.addEventListener('click', async () => {
       await handleLogout();
-    });
-  }
-
-  const openSettingsBtn = document.getElementById('openSettingsBtn');
-  if (openSettingsBtn) {
-    openSettingsBtn.addEventListener('click', () => {
-      openAuthModal('setup');
     });
   }
 }
