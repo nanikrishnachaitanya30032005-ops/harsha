@@ -95,6 +95,11 @@ async function handleSignUp(event) {
     return;
   }
 
+  if (password.length < 6) {
+    showError('signUpError', 'Password must be at least 6 characters.');
+    return;
+  }
+
   try {
     const { data, error } = await supabaseClient.auth.signUp({ email, password });
     if (error) throw error;

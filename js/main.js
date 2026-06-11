@@ -191,14 +191,6 @@ const RESOURCES = [
   { type: 'Cloud', title: 'AWS Skill Builder', desc: 'Free cloud training and certification prep from Amazon.', url: 'https://skillbuilder.aws' },
   { type: 'Video', title: 'CS50 (Harvard)', desc: 'World-renowned intro to computer science — free on edX.', url: 'https://cs50.harvard.edu' },
 ];
-
-const CONTACT_INFO = [
-  { icon: '📧', label: 'Email', value: 'hello@skillboost.edu' },
-  { icon: '📍', label: 'Campus Office', value: 'Student Learning Center, Building C, Room 204' },
-  { icon: '🕐', label: 'Office Hours', value: 'Mon – Fri, 9:00 AM – 5:00 PM' },
-  { icon: '💬', label: 'Response Time', value: 'We typically reply within 24–48 hours' },
-];
-
 const SUBJECT_OPTIONS = [
   { value: 'skills', label: 'Skill Guidance' },
   { value: 'career', label: 'Career Roadmap' },
@@ -209,8 +201,7 @@ const SUBJECT_OPTIONS = [
 
 const STORAGE_KEY = 'skillboost-progress';
 
-const CURRENT_PAGE = window.location.pathname.includes('contact') ? 'contact' : 'home';
-const HASH = (id) => (CURRENT_PAGE === 'contact' ? `index.html#${id}` : `#${id}`);
+const HASH = (id) => `#${id}`;
 
 function getSkillIdFromHash() {
   const hash = window.location.hash || '';
@@ -447,7 +438,6 @@ function renderHeader() {
     { href: HASH('progress'), label: 'Progress' },
     { href: HASH('resources'), label: 'Resources' },
     { href: 'login.html', label: 'Login' },
-    { href: 'contact.html', label: 'Contact', active: CURRENT_PAGE === 'contact' },
   ];
 
   return `
@@ -487,7 +477,6 @@ function renderFooter() {
     { href: HASH('quiz'), label: 'Quiz' },
     { href: HASH('progress'), label: 'Progress' },
     { href: HASH('resources'), label: 'Resources' },
-    { href: 'contact.html', label: 'Contact' },
   ];
 
   return `
@@ -644,79 +633,7 @@ function renderHomePage() {
   `;
 }
 
-function renderContactHero() {
-  return `
-    <section class="page-hero">
-      <div class="container">
-        <h1>Get in Touch</h1>
-        <p>Have questions about skills, roadmaps, or resources? We'd love to hear from you.</p>
-      </div>
-    </section>
-  `;
-}
 
-function renderContactInfo() {
-  return `
-    <div class="contact-info">
-      <h2>Contact Information</h2>
-      <p>Reach out for mentorship requests, partnership inquiries, or general support.</p>
-      ${CONTACT_INFO.map((item) => `
-        <div class="contact-item">
-          <span class="contact-icon">${item.icon}</span>
-          <div>
-            <strong>${item.label}</strong>
-            <p>${item.value}</p>
-          </div>
-        </div>
-      `).join('')}
-    </div>
-  `;
-}
-
-function renderContactForm() {
-  return `
-    <form class="contact-form" id="contactForm">
-      <h2>Send a Message</h2>
-      <div class="form-group">
-        <label for="name">Full Name</label>
-        <input type="text" id="name" name="name" required placeholder="Your name">
-      </div>
-      <div class="form-group">
-        <label for="email">Email Address</label>
-        <input type="email" id="email" name="email" required placeholder="you@university.edu">
-      </div>
-      <div class="form-group">
-        <label for="subject">Subject</label>
-        <select id="subject" name="subject" required>
-          <option value="">Select a topic</option>
-          ${SUBJECT_OPTIONS.map((opt) => `<option value="${opt.value}">${opt.label}</option>`).join('')}
-        </select>
-      </div>
-      <div class="form-group">
-        <label for="message">Message</label>
-        <textarea id="message" name="message" rows="5" required placeholder="How can we help you?"></textarea>
-      </div>
-      <button type="submit" class="btn btn-primary btn-full">Send Message</button>
-      <p class="form-success" id="formSuccess" hidden>Thank you! Your message has been sent successfully.</p>
-    </form>
-  `;
-}
-
-function renderContactPage() {
-  return `
-    ${renderHeader()}
-    <main>
-      ${renderContactHero()}
-      <section class="section">
-        <div class="container contact-layout">
-          ${renderContactInfo()}
-          ${renderContactForm()}
-        </div>
-      </section>
-    </main>
-    ${renderFooter()}
-  `;
-}
 
 function renderSkillDetailPage(skillId) {
   const skill = getSkillById(skillId);
@@ -851,11 +768,6 @@ function renderApp() {
   const app = document.getElementById('app');
   if (!app) return;
 
-  if (CURRENT_PAGE === 'contact') {
-    app.innerHTML = renderContactPage();
-    initAuthEventListeners();
-    return;
-  }
 
   const skillId = getSkillIdFromHash();
   if (skillId) {
@@ -1201,23 +1113,7 @@ function renderResources() {
   ).join('');
 }
 
-/* ===== Contact Form ===== */
-function initContactForm() {
-  const form = document.getElementById('contactForm');
-  if (!form) return;
-
-  form.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const success = document.getElementById('formSuccess');
-    if (success) {
-      success.hidden = false;
-      form.reset();
-      setTimeout(() => {
-        success.hidden = true;
-      }, 5000);
-    }
-  });
-}
+/* Contact form removed (contact page disabled) */
 
 /* ===== Auth Modal UI & Event Handling ===== */
 function ensureModalInDOM() {
@@ -1391,6 +1287,12 @@ function initModalEvents() {
         return;
       }
 
+      if (password.length < 6) {
+        errorDiv.textContent = 'Password must be at least 6 characters.';
+        errorDiv.hidden = false;
+        return;
+      }
+
       try {
         const { data, error } = await supabaseClient.auth.signUp({ email, password });
         if (error) throw error;
@@ -1458,9 +1360,7 @@ function updateAuthUI() {
   renderApp();
   initNav();
   
-  if (CURRENT_PAGE === 'contact') {
-    initContactForm();
-  } else if (getSkillIdFromHash()) {
+  if (getSkillIdFromHash()) {
     initSkillDetailPage();
   } else {
     initHomePage();
