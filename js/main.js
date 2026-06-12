@@ -97,88 +97,7 @@ const CAREERS = [
   },
 ];
 
-const QUIZ_QUESTIONS = [
-  {
-    question: 'What type of work excites you most?',
-    options: [
-      { text: 'Building websites and user interfaces', tags: ['web-dev', 'html', 'css', 'javascript'] },
-      { text: 'Analyzing data to find patterns', tags: ['data-science', 'data-analytics', 'sql', 'python'] },
-      { text: 'Protecting systems from hackers', tags: ['cybersecurity', 'c', 'python'] },
-      { text: 'Creating intelligent machines', tags: ['ai', 'data-science', 'python'] },
-    ],
-  },
-  {
-    question: 'How do you prefer to solve problems?',
-    options: [
-      { text: 'Visually — layouts, design, and user experience', tags: ['css', 'web-dev', 'html'] },
-      { text: 'Logically — math, statistics, and models', tags: ['data-science', 'ai', 'sql'] },
-      { text: 'Hands-on — breaking and fixing systems', tags: ['cybersecurity', 'c', 'cpp'] },
-      { text: 'At scale — infrastructure and automation', tags: ['cloud', 'java', 'python'] },
-    ],
-  },
-  {
-    question: 'Which programming experience do you have?',
-    options: [
-      { text: 'None — I\'m just starting out', tags: ['html', 'python', 'web-dev'] },
-      { text: 'Some web basics (HTML/CSS/JS)', tags: ['javascript', 'web-dev', 'css'] },
-      { text: 'A general-purpose language (Python, Java, C)', tags: ['python', 'java', 'software-engineer'] },
-      { text: 'Databases and data tools', tags: ['sql', 'data-analytics', 'data-science'] },
-    ],
-  },
-  {
-    question: 'What is your primary career goal?',
-    options: [
-      { text: 'Become a full-stack web developer', tags: ['web-dev', 'javascript', 'html', 'css'] },
-      { text: 'Work in data science or AI research', tags: ['data-science', 'ai', 'python'] },
-      { text: 'Secure a role in cybersecurity', tags: ['cybersecurity', 'c', 'cloud'] },
-      { text: 'Build enterprise software or cloud systems', tags: ['java', 'cloud', 'cpp', 'sql'] },
-    ],
-  },
-  {
-    question: 'How much time can you dedicate weekly?',
-    options: [
-      { text: '5–10 hours (casual learner)', tags: ['html', 'css', 'data-analytics'] },
-      { text: '10–20 hours (serious student)', tags: ['javascript', 'python', 'web-dev'] },
-      { text: '20+ hours (intensive bootcamp pace)', tags: ['data-science', 'ai', 'cybersecurity'] },
-      { text: 'Flexible — project-based learning', tags: ['cloud', 'java', 'cpp'] },
-    ],
-  },
-];
 
-const CAREER_MAP = {
-  'web-dev': 'Web Developer',
-  'data-science': 'Data Scientist',
-  'data-analytics': 'Data Analyst',
-  'cybersecurity': 'Cybersecurity Analyst',
-  'cloud': 'Cloud Engineer',
-  'ai': 'AI / ML Engineer',
-  'software-engineer': 'Software Engineer',
-  'html': 'Frontend Developer',
-  'css': 'UI Developer',
-  'javascript': 'JavaScript Developer',
-  'python': 'Python Developer',
-  'java': 'Java Developer',
-  'c': 'Systems Programmer',
-  'cpp': 'C++ Developer',
-  'sql': 'Database Developer',
-};
-
-const SKILL_NAME_MAP = {
-  'web-dev': 'Web Development',
-  'data-science': 'Data Science',
-  'data-analytics': 'Data Analytics',
-  'cybersecurity': 'Cybersecurity',
-  'cloud': 'Cloud Computing',
-  'ai': 'AI',
-  'html': 'HTML',
-  'css': 'CSS',
-  'javascript': 'JavaScript',
-  'python': 'Python',
-  'java': 'Java',
-  'c': 'C',
-  'cpp': 'C++',
-  'sql': 'SQL',
-};
 
 const RESOURCES = [
   { type: 'Course', title: 'freeCodeCamp', desc: 'Free full-stack web development curriculum with certifications.', url: 'https://www.freecodecamp.org' },
@@ -199,8 +118,6 @@ const SUBJECT_OPTIONS = [
   { value: 'other', label: 'Other' },
 ];
 
-const STORAGE_KEY = 'skillboost-progress';
-
 const HASH = (id) => `#${id}`;
 
 function getSkillIdFromHash() {
@@ -211,15 +128,6 @@ function getSkillIdFromHash() {
 
 function getSkillById(id) {
   return SKILLS.find((s) => s.id === id);
-}
-
-/* ===== Utilities ===== */
-function getProgress() {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
-  } catch {
-    return {};
-  }
 }
 
 /* ===== Supabase Initialization & State ===== */
@@ -249,7 +157,6 @@ async function checkAuthSession() {
     if (error) throw error;
     if (session) {
       currentUser = session.user;
-      await fetchAndMergeSupabaseProgress();
     } else {
       currentUser = null;
     }
@@ -262,12 +169,7 @@ function setupAuthListener() {
   if (!supabaseClient) return;
   supabaseClient.auth.onAuthStateChange(async (event, session) => {
     if (session) {
-      const isNewUser = !currentUser;
       currentUser = session.user;
-      if (isNewUser) {
-        await uploadOfflineProgressToSupabase();
-        await fetchAndMergeSupabaseProgress();
-      }
     } else {
       currentUser = null;
     }
@@ -284,121 +186,7 @@ async function handleLogout() {
     }
   }
   currentUser = null;
-  localStorage.removeItem(STORAGE_KEY);
   updateAuthUI();
-}
-
-/* ===== Sync Helper Functions ===== */
-function showSyncingState(isSyncing) {
-  const indicators = document.querySelectorAll('#syncStatusIndicator');
-  indicators.forEach(indicator => {
-    if (isSyncing) {
-      indicator.innerHTML = `<span class="sync-spinner"></span> <span class="sync-text">Syncing...</span>`;
-      indicator.className = 'sync-indicator';
-    }
-  });
-}
-
-function showSyncSuccess() {
-  const indicators = document.querySelectorAll('#syncStatusIndicator');
-  indicators.forEach(indicator => {
-    indicator.innerHTML = `<span class="status-dot" style="background-color:var(--success)"></span> <span class="sync-text" style="color:var(--success)">Synced</span>`;
-    indicator.className = 'sync-indicator';
-  });
-}
-
-function showSyncError() {
-  const indicators = document.querySelectorAll('#syncStatusIndicator');
-  indicators.forEach(indicator => {
-    indicator.innerHTML = `<span class="status-dot" style="background-color:var(--warning)"></span> <span class="sync-text" style="color:var(--warning)">Sync Error</span>`;
-    indicator.className = 'sync-indicator';
-  });
-}
-
-async function uploadOfflineProgressToSupabase() {
-  if (!supabaseClient || !currentUser) return;
-  const localData = getProgress();
-  const entries = Object.entries(localData);
-  if (entries.length === 0) return;
-
-  showSyncingState(true);
-  const upsertData = entries.map(([skillId, val]) => ({
-    user_id: currentUser.id,
-    skill_id: skillId,
-    progress_percent: val,
-    updated_at: new Date().toISOString()
-  }));
-
-  try {
-    const { error } = await supabaseClient
-      .from('skillboost_progress')
-      .upsert(upsertData, { onConflict: 'user_id,skill_id' });
-    if (error) throw error;
-    showSyncSuccess();
-  } catch (err) {
-    console.error('Error uploading offline progress:', err);
-    showSyncError();
-  }
-}
-
-async function fetchAndMergeSupabaseProgress() {
-  if (!supabaseClient || !currentUser) return;
-  showSyncingState(true);
-  try {
-    const { data, error } = await supabaseClient
-      .from('skillboost_progress')
-      .select('skill_id, progress_percent');
-    if (error) throw error;
-
-    const localData = getProgress();
-    let merged = { ...localData };
-    if (data && data.length > 0) {
-      data.forEach(row => {
-        merged[row.skill_id] = Math.max(localData[row.skill_id] || 0, row.progress_percent);
-      });
-    }
-    saveProgress(merged, false);
-    
-    // Re-render local progress sections if present
-    renderProgress();
-    showSyncSuccess();
-  } catch (err) {
-    console.error('Error fetching progress from Supabase:', err);
-    showSyncError();
-  }
-}
-
-async function syncAllProgressToSupabase(data) {
-  if (!supabaseClient || !currentUser) return;
-  showSyncingState(true);
-  const entries = Object.entries(data);
-  if (entries.length === 0) {
-    showSyncSuccess();
-    return;
-  }
-  const upsertData = entries.map(([skillId, val]) => ({
-    user_id: currentUser.id,
-    skill_id: skillId,
-    progress_percent: val,
-    updated_at: new Date().toISOString()
-  }));
-  try {
-    const { error } = await supabaseClient
-      .from('skillboost_progress')
-      .upsert(upsertData, { onConflict: 'user_id,skill_id' });
-    if (error) throw error;
-    showSyncSuccess();
-  } catch (err) {
-    console.error('Sync error:', err);
-    showSyncError();
-  }
-}
-
-function saveProgress(data, sync = true) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  if (sync && supabaseClient && currentUser) {
-    syncAllProgressToSupabase(data);
-  }
 }
 
 /* ===== Page Templates (HTML → JavaScript) ===== */
@@ -415,9 +203,6 @@ function renderAuthNav() {
           <div class="dropdown-header">
             <div style="font-size:0.75rem;color:var(--text-muted)">Logged in as</div>
             <div class="dropdown-user-email" title="${currentUser.email}">${currentUser.email}</div>
-            <div id="syncStatusIndicator" class="sync-indicator">
-              <span class="status-dot" style="background-color:var(--success)"></span> <span class="sync-text">Synced</span>
-            </div>
           </div>
           <button class="dropdown-item logout-btn" id="logoutBtn">🚪 Sign Out</button>
         </div>
@@ -434,8 +219,6 @@ function renderHeader() {
   const navItems = [
     { href: HASH('skills'), label: 'Skills' },
     { href: HASH('careers'), label: 'Careers' },
-    { href: HASH('quiz'), label: 'Quiz' },
-    { href: HASH('progress'), label: 'Progress' },
     { href: HASH('resources'), label: 'Resources' },
     { href: 'login.html', label: 'Login' },
   ];
@@ -474,8 +257,6 @@ function renderFooter() {
   const links = [
     { href: HASH('skills'), label: 'Skills' },
     { href: HASH('careers'), label: 'Careers' },
-    { href: HASH('quiz'), label: 'Quiz' },
-    { href: HASH('progress'), label: 'Progress' },
     { href: HASH('resources'), label: 'Resources' },
   ];
 
@@ -517,10 +298,9 @@ function renderHero() {
       <div class="container hero-content">
         <p class="hero-badge">Student Skill Improvement Platform</p>
         <h1>Level Up Your Skills with <span class="gradient-text">SkillBoost</span></h1>
-        <p class="hero-desc">Discover your strengths, follow personalized roadmaps, and track your journey from beginner to job-ready.</p>
+        <p class="hero-desc">Discover your strengths and follow personalized roadmaps from beginner to job-ready.</p>
         <div class="hero-actions">
-          <a href="#quiz" class="btn btn-primary">Take the Skill Quiz</a>
-          <a href="#skills" class="btn btn-secondary">Explore Skills</a>
+          <a href="#skills" class="btn btn-primary">Explore Skills</a>
         </div>
         <div class="hero-stats">
           <div class="stat">
@@ -548,7 +328,7 @@ function renderSkillsSection() {
       <div class="container">
         <div class="section-header">
           <h2>Explore Skills</h2>
-          <p>Choose a skill to start learning. Track your progress as you grow.</p>
+          <p>Choose a skill to start learning and view detailed roadmaps.</p>
         </div>
         <div class="skills-grid" id="skillsGrid"></div>
       </div>
@@ -625,8 +405,6 @@ function renderHomePage() {
       ${renderHero()}
       ${renderSkillsSection()}
       ${renderCareersSection()}
-      ${renderQuizSection()}
-      ${renderProgressSection()}
       ${renderResourcesSection()}
     </main>
     ${renderFooter()}
@@ -643,8 +421,6 @@ function renderSkillDetailPage(skillId) {
     return null;
   }
 
-  const progress = getProgress()[skillId] || 0;
-
   return `
     ${renderHeader()}
     <main class="skill-detail-main">
@@ -658,7 +434,6 @@ function renderSkillDetailPage(skillId) {
               <h1>${skill.name}</h1>
               <p class="skill-detail-tagline">${skill.desc}</p>
               <div class="skill-detail-meta">
-                <span class="skill-progress-badge">${progress}% Complete</span>
                 <button class="btn btn-primary" id="startLearningBtn" data-skill="${skillId}">Start Learning</button>
               </div>
             </div>
@@ -755,7 +530,6 @@ function renderSkillDetailPage(skillId) {
           </div>
           <div class="skill-detail-cta">
             <button class="btn btn-primary btn-lg" id="startLearningBtn2" data-skill="${skillId}">Start Learning ${skill.name}</button>
-            <a href="index.html#progress" class="btn btn-secondary btn-lg">Track Your Progress</a>
           </div>
         </div>
       </section>
@@ -789,8 +563,6 @@ function renderApp() {
 function initHomePage() {
   renderSkills();
   renderCareers();
-  renderQuiz();
-  renderProgress();
   renderResources();
 }
 
@@ -799,13 +571,6 @@ function initSkillDetailPage() {
   if (!skillId) return;
 
   const startLearning = (id) => {
-    const data = getProgress();
-    if (!data[id] || data[id] === 0) {
-      data[id] = 10;
-      saveProgress(data);
-      const badge = document.querySelector('.skill-progress-badge');
-      if (badge) badge.textContent = '10% Complete';
-    }
     document.getElementById('learning-levels')?.scrollIntoView({ behavior: 'smooth' });
   };
 
@@ -818,13 +583,11 @@ function initRouter() {
     navInitialized = false;
     renderApp();
     initNav();
-    if (CURRENT_PAGE === 'home') {
-      if (getSkillIdFromHash()) {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-        initSkillDetailPage();
-      } else {
-        initHomePage();
-      }
+    if (getSkillIdFromHash()) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      initSkillDetailPage();
+    } else {
+      initHomePage();
     }
   });
 }
@@ -903,198 +666,7 @@ function renderCareers() {
   ).join('');
 }
 
-/* ===== Quiz ===== */
-let quizState = { index: 0, answers: [], selected: null };
 
-function renderQuiz() {
-  const content = document.getElementById('quizContent');
-  const bar = document.getElementById('quizProgressBar');
-  if (!content) return;
-
-  const total = QUIZ_QUESTIONS.length;
-  const pct = (quizState.index / total) * 100;
-  if (bar) bar.style.width = `${pct}%`;
-
-  if (quizState.index >= total) {
-    showQuizResults(content);
-    if (bar) bar.style.width = '100%';
-    return;
-  }
-
-  const q = QUIZ_QUESTIONS[quizState.index];
-  quizState.selected = null;
-
-  content.innerHTML = `
-    <div class="quiz-question">
-      <h3>Question ${quizState.index + 1} of ${total}</h3>
-      <p style="margin-bottom:1.25rem;color:var(--text-muted)">${q.question}</p>
-      <div class="quiz-options">
-        ${q.options
-          .map(
-            (opt, i) => `
-          <button class="quiz-option" data-index="${i}">${opt.text}</button>
-        `
-          )
-          .join('')}
-      </div>
-      <div class="quiz-nav">
-        <button class="btn btn-secondary" id="quizPrev" ${quizState.index === 0 ? 'disabled style="opacity:0.4;cursor:not-allowed"' : ''}>Previous</button>
-        <button class="btn btn-primary" id="quizNext" disabled style="opacity:0.4;cursor:not-allowed">Next</button>
-      </div>
-    </div>
-  `;
-
-  content.querySelectorAll('.quiz-option').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      content.querySelectorAll('.quiz-option').forEach((b) => b.classList.remove('selected'));
-      btn.classList.add('selected');
-      quizState.selected = parseInt(btn.dataset.index, 10);
-      const nextBtn = document.getElementById('quizNext');
-      nextBtn.disabled = false;
-      nextBtn.style.opacity = '1';
-      nextBtn.style.cursor = 'pointer';
-    });
-  });
-
-  document.getElementById('quizPrev')?.addEventListener('click', () => {
-    if (quizState.index > 0) {
-      quizState.index--;
-      renderQuiz();
-    }
-  });
-
-  document.getElementById('quizNext')?.addEventListener('click', () => {
-    if (quizState.selected !== null) {
-      quizState.answers[quizState.index] = quizState.selected;
-      quizState.index++;
-      renderQuiz();
-    }
-  });
-}
-
-function showQuizResults(container) {
-  const tagCounts = {};
-
-  quizState.answers.forEach((answerIdx, qIdx) => {
-    const tags = QUIZ_QUESTIONS[qIdx].options[answerIdx].tags;
-    tags.forEach((tag) => {
-      tagCounts[tag] = (tagCounts[tag] || 0) + 1;
-    });
-  });
-
-  const sorted = Object.entries(tagCounts).sort((a, b) => b[1] - a[1]);
-  const topCareers = sorted
-    .filter(([tag]) => CAREER_MAP[tag])
-    .slice(0, 3)
-    .map(([tag]) => ({ tag, name: CAREER_MAP[tag] }));
-
-  const topSkills = sorted
-    .filter(([tag]) => SKILL_NAME_MAP[tag])
-    .slice(0, 5)
-    .map(([tag]) => SKILL_NAME_MAP[tag]);
-
-  const uniqueCareers = [...new Map(topCareers.map((c) => [c.name, c])).values()].slice(0, 2);
-
-  container.innerHTML = `
-    <div class="quiz-results">
-      <h3>Your Recommendations</h3>
-      <p>Based on your answers, here are the best paths for you:</p>
-      ${uniqueCareers
-        .map(
-          (c) => `
-        <div class="result-career">
-          <h4>🎯 Recommended Career: ${c.name}</h4>
-          <p style="font-size:0.9rem;color:var(--text-muted)">Explore the ${c.name} roadmap above to get started.</p>
-        </div>
-      `
-        )
-        .join('')}
-      <h4 style="margin-bottom:0.75rem;font-size:1rem">Skills to Focus On</h4>
-      <div class="result-skills">
-        ${topSkills.map((s) => `<span class="result-skill">${s}</span>`).join('')}
-      </div>
-      <div class="quiz-nav" style="margin-top:2rem">
-        <button class="btn btn-secondary" id="quizRetake">Retake Quiz</button>
-        <a href="#progress" class="btn btn-primary">Track Progress</a>
-      </div>
-    </div>
-  `;
-
-  document.getElementById('quizRetake')?.addEventListener('click', () => {
-    quizState = { index: 0, answers: [], selected: null };
-    renderQuiz();
-  });
-}
-
-/* ===== Progress Tracker ===== */
-function renderProgress() {
-  const summary = document.getElementById('progressSummary');
-  const list = document.getElementById('progressList');
-  if (!summary || !list) return;
-
-  const progress = getProgress();
-  const values = SKILLS.map((s) => progress[s.id] || 0);
-  const avg = values.length ? Math.round(values.reduce((a, b) => a + b, 0) / values.length) : 0;
-  const completed = values.filter((v) => v >= 80).length;
-  const inProgress = values.filter((v) => v > 0 && v < 80).length;
-
-  summary.innerHTML = `
-    <div class="summary-card">
-      <div class="value">${avg}%</div>
-      <div class="label">Overall Progress</div>
-    </div>
-    <div class="summary-card">
-      <div class="value">${completed}</div>
-      <div class="label">Skills Mastered (80%+)</div>
-    </div>
-    <div class="summary-card">
-      <div class="value">${inProgress}</div>
-      <div class="label">Skills In Progress</div>
-    </div>
-  `;
-
-  list.innerHTML = SKILLS.map((s) => {
-    const pct = progress[s.id] || 0;
-    return `
-      <div class="progress-item">
-        <div class="progress-item-info">
-          <span class="icon">${s.icon}</span>
-          <h4>${s.name}</h4>
-        </div>
-        <span class="progress-pct">${pct}%</span>
-        <div class="progress-bar-wrap">
-          <div class="progress-bar">
-            <div class="progress-bar-fill" style="width:${pct}%"></div>
-          </div>
-          <input type="range" class="progress-slider" min="0" max="100" value="${pct}" data-skill="${s.id}" aria-label="${s.name} progress">
-        </div>
-      </div>
-    `;
-  }).join('');
-
-  list.querySelectorAll('.progress-slider').forEach((slider) => {
-    slider.addEventListener('input', (e) => {
-      const skillId = e.target.dataset.skill;
-      const val = parseInt(e.target.value, 10);
-      const data = getProgress();
-      data[skillId] = val;
-      saveProgress(data);
-
-      const item = e.target.closest('.progress-item');
-      item.querySelector('.progress-pct').textContent = `${val}%`;
-      item.querySelector('.progress-bar-fill').style.width = `${val}%`;
-
-      const newValues = SKILLS.map((s) => (s.id === skillId ? val : data[s.id] || 0));
-      const newAvg = Math.round(newValues.reduce((a, b) => a + b, 0) / newValues.length);
-      const newCompleted = newValues.filter((v) => v >= 80).length;
-      const newInProgress = newValues.filter((v) => v > 0 && v < 80).length;
-
-      summary.querySelectorAll('.summary-card .value')[0].textContent = `${newAvg}%`;
-      summary.querySelectorAll('.summary-card .value')[1].textContent = newCompleted;
-      summary.querySelectorAll('.summary-card .value')[2].textContent = newInProgress;
-    });
-  });
-}
 
 /* ===== Resources ===== */
 function renderResources() {
