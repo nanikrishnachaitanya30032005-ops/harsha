@@ -218,6 +218,7 @@ function renderAuthNav() {
 function renderHeader() {
   const navItems = [
     { href: HASH('skills'), label: 'Skills' },
+    { href: HASH('quiz'), label: 'Quiz' },
     { href: HASH('careers'), label: 'Careers' },
     { href: HASH('resources'), label: 'Resources' },
     { href: 'login.html', label: 'Login' },
@@ -256,6 +257,7 @@ function renderHeader() {
 function renderFooter() {
   const links = [
     { href: HASH('skills'), label: 'Skills' },
+    { href: HASH('quiz'), label: 'Quiz' },
     { href: HASH('careers'), label: 'Careers' },
     { href: HASH('resources'), label: 'Resources' },
   ];
@@ -301,6 +303,7 @@ function renderHero() {
         <p class="hero-desc">Discover your strengths and follow personalized roadmaps from beginner to job-ready.</p>
         <div class="hero-actions">
           <a href="#skills" class="btn btn-primary">Explore Skills</a>
+          <a href="#quiz" class="btn btn-secondary">Take the Skill Quiz</a>
         </div>
         <div class="hero-stats">
           <div class="stat">
@@ -421,6 +424,9 @@ function renderSkillDetailPage(skillId) {
     return null;
   }
 
+  const progressData = JSON.parse(localStorage.getItem('skillboost-progress') || '{}');
+  const progress = progressData[skillId] || 0;
+
   return `
     ${renderHeader()}
     <main class="skill-detail-main">
@@ -433,8 +439,9 @@ function renderSkillDetailPage(skillId) {
               <span class="skill-detail-badge">Skill Guide</span>
               <h1>${skill.name}</h1>
               <p class="skill-detail-tagline">${skill.desc}</p>
-              <div class="skill-detail-meta">
+              <div class="skill-detail-meta" style="display: flex; align-items: center; gap: 1rem;">
                 <button class="btn btn-primary" id="startLearningBtn" data-skill="${skillId}">Start Learning</button>
+                ${progress > 0 ? `<span class="skill-progress-badge">Score: ${progress}%</span>` : ''}
               </div>
             </div>
           </div>
@@ -533,6 +540,18 @@ function renderSkillDetailPage(skillId) {
           </div>
         </div>
       </section>
+      
+      <section class="section" style="border-top: 1px solid var(--border);">
+        <div class="container" style="max-width: 900px;">
+          <div class="section-header" style="text-align: left; margin: 0 0 2rem;">
+            <h2>💬 Doubts & Discussion Board</h2>
+            <p>Collaborate with other students. Ask questions, share explanations, and get help.</p>
+          </div>
+          <div id="doubtsBoard" data-skill="${skillId}">
+            <!-- Rendered by renderDoubtsBoard() -->
+          </div>
+        </div>
+      </section>
     </main>
     ${renderFooter()}
   `;
@@ -542,6 +561,15 @@ function renderApp() {
   const app = document.getElementById('app');
   if (!app) return;
 
+  const hash = window.location.hash || '';
+  if (hash === '#quiz') {
+    clearQuizTimer();
+    document.title = 'Skill Assessment Quiz — SkillBoost';
+    app.innerHTML = renderQuizPage();
+    initAuthEventListeners();
+    initQuizPage();
+    return;
+  }
 
   const skillId = getSkillIdFromHash();
   if (skillId) {
@@ -576,16 +604,23 @@ function initSkillDetailPage() {
 
   document.getElementById('startLearningBtn')?.addEventListener('click', () => startLearning(skillId));
   document.getElementById('startLearningBtn2')?.addEventListener('click', () => startLearning(skillId));
+
+  // Initialize Doubts Board
+  initLocalStorageDoubts();
+  renderDoubtsBoard(skillId);
 }
 
 function initRouter() {
   window.addEventListener('hashchange', () => {
     navInitialized = false;
+    clearQuizTimer();
     renderApp();
     initNav();
     if (getSkillIdFromHash()) {
       window.scrollTo({ top: 0, behavior: 'smooth' });
       initSkillDetailPage();
+    } else if (window.location.hash === '#quiz') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } else {
       initHomePage();
     }
@@ -618,15 +653,31 @@ function renderSkills() {
   const grid = document.getElementById('skillsGrid');
   if (!grid) return;
 
+  const progressData = JSON.parse(localStorage.getItem('skillboost-progress') || '{}');
+
   grid.innerHTML = SKILLS.map(
-    (s) => `
-      <a href="#skill/${s.id}" class="skill-card" data-skill="${s.id}">
-        <div class="skill-icon">${s.icon}</div>
-        <h3>${s.name}</h3>
-        <p>${s.desc}</p>
-        <span class="skill-card-link">View Details →</span>
-      </a>
-    `
+    (s) => {
+      const progress = progressData[s.id] || 0;
+      return `
+        <a href="#skill/${s.id}" class="skill-card" data-skill="${s.id}">
+          <div class="skill-icon">${s.icon}</div>
+          <h3>${s.name}</h3>
+          <p>${s.desc}</p>
+          ${progress > 0 ? `
+            <div class="skill-progress-container" style="margin-top: 0.5rem; margin-bottom: 0.5rem;">
+              <div style="display: flex; justify-content: space-between; font-size: 0.7rem; color: var(--text-muted); margin-bottom: 0.25rem;">
+                <span>Progress</span>
+                <span>${progress}%</span>
+              </div>
+              <div class="skill-progress-bar-bg" style="background: var(--border); height: 4px; border-radius: 2px; overflow: hidden;">
+                <div class="skill-progress-bar-fill" style="background: var(--accent); width: ${progress}%; height: 100%;"></div>
+              </div>
+            </div>
+          ` : ''}
+          <span class="skill-card-link">View Details →</span>
+        </a>
+      `;
+    }
   ).join('');
 }
 
@@ -929,14 +980,880 @@ function initAuthEventListeners() {
 
 function updateAuthUI() {
   navInitialized = false; // Allow nav to be re-initialized
+  clearQuizTimer();
   renderApp();
   initNav();
   
   if (getSkillIdFromHash()) {
     initSkillDetailPage();
+  } else if (window.location.hash === '#quiz') {
+    // Already handled in renderApp
   } else {
     initHomePage();
   }
+}
+
+function escapeHTML(str) {
+  if (typeof str !== 'string') return str;
+  return str.replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+}
+
+/* ===== Quiz & Assessment Logic (LocalStorage backed) ===== */
+let quizViewMode = 'setup'; // 'setup', 'active', 'results'
+let quizState = {
+  skill: '',
+  difficulty: '',
+  questions: [],
+  currentIdx: 0,
+  answers: [],
+  timeRemaining: 30,
+  timerInterval: null
+};
+
+function clearQuizTimer() {
+  if (quizState.timerInterval) {
+    clearInterval(quizState.timerInterval);
+    quizState.timerInterval = null;
+  }
+}
+
+function shuffleOptions(questionObj) {
+  // Create copy to shuffle
+  const originalOptions = questionObj.options.map((opt, idx) => ({ opt, idx }));
+  for (let i = originalOptions.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [originalOptions[i], originalOptions[j]] = [originalOptions[j], originalOptions[i]];
+  }
+  const newCorrectIdx = originalOptions.findIndex(item => item.idx === questionObj.correct);
+  return {
+    question: questionObj.question,
+    options: originalOptions.map(item => item.opt),
+    correct: newCorrectIdx,
+    explanation: questionObj.explanation
+  };
+}
+
+function startQuiz(skillId, difficulty) {
+  const categoryQuestions = window.QUIZ_QUESTION_BANK[skillId]?.[difficulty];
+  if (!categoryQuestions || categoryQuestions.length === 0) {
+    alert("Question bank for this combination is currently unavailable.");
+    return;
+  }
+
+  // Clone and shuffle
+  const cloned = JSON.parse(JSON.stringify(categoryQuestions));
+  for (let i = cloned.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [cloned[i], cloned[j]] = [cloned[j], cloned[i]];
+  }
+
+  // Shuffle options for each question
+  const finalizedQuestions = cloned.map(q => shuffleOptions(q));
+
+  quizState.skill = skillId;
+  quizState.difficulty = difficulty;
+  quizState.questions = finalizedQuestions;
+  quizState.currentIdx = 0;
+  quizState.answers = new Array(finalizedQuestions.length).fill(undefined);
+  quizViewMode = 'active';
+
+  renderQuizUI();
+}
+
+function submitQuiz() {
+  clearQuizTimer();
+
+  const total = quizState.questions.length;
+  const score = quizState.answers.reduce((acc, ans, idx) => {
+    return acc + (ans === quizState.questions[idx].correct ? 1 : 0);
+  }, 0);
+  const percentage = Math.round((score / total) * 100);
+
+  // Save history
+  const history = JSON.parse(localStorage.getItem('skillboost-quiz-history') || '[]');
+  const record = {
+    skill: quizState.skill,
+    difficulty: quizState.difficulty,
+    score,
+    total,
+    percentage,
+    timestamp: Date.now()
+  };
+  history.push(record);
+  localStorage.setItem('skillboost-quiz-history', JSON.stringify(history));
+
+  // Save progress
+  const progressData = JSON.parse(localStorage.getItem('skillboost-progress') || '{}');
+  const currentMax = progressData[quizState.skill] || 0;
+  progressData[quizState.skill] = Math.max(currentMax, percentage);
+  localStorage.setItem('skillboost-progress', JSON.stringify(progressData));
+
+  quizViewMode = 'results';
+  renderQuizUI();
+}
+
+function startTimer() {
+  clearQuizTimer();
+  quizState.timeRemaining = 30;
+  
+  const countdownEl = document.getElementById('timerCountdown');
+  if (countdownEl) countdownEl.textContent = `${quizState.timeRemaining}s`;
+
+  quizState.timerInterval = setInterval(() => {
+    quizState.timeRemaining--;
+    const countdownEl = document.getElementById('timerCountdown');
+    if (countdownEl) {
+      countdownEl.textContent = `${quizState.timeRemaining}s`;
+      if (quizState.timeRemaining <= 10) {
+        countdownEl.parentElement.style.color = '#ef4444';
+      }
+    }
+
+    if (quizState.timeRemaining <= 0) {
+      clearQuizTimer();
+      handleQuestionTimeout();
+    }
+  }, 1000);
+}
+
+function handleQuestionTimeout() {
+  if (quizState.answers[quizState.currentIdx] === undefined) {
+    quizState.answers[quizState.currentIdx] = null; // Mark skipped
+  }
+  
+  const total = quizState.questions.length;
+  if (quizState.currentIdx < total - 1) {
+    quizState.currentIdx++;
+    renderQuizUI();
+  } else {
+    submitQuiz();
+  }
+}
+
+/* ===== Quiz UI Templates ===== */
+function renderQuizPage() {
+  return `
+    ${renderHeader()}
+    <main class="quiz-main" style="padding-top: calc(var(--header-h) + 2rem); min-height: calc(100vh - 200px); padding-bottom: 4rem;">
+      <div class="container" style="max-width: 800px;">
+        <div class="section-header" style="margin-bottom: 2rem;">
+          <h1>Skill Assessment Quiz</h1>
+          <p>Answer randomized multiple-choice questions to review explanations and track progress.</p>
+        </div>
+        <div class="quiz-card" id="quizCard">
+          <!-- Rendered dynamically -->
+        </div>
+      </div>
+    </main>
+    ${renderFooter()}
+  `;
+}
+
+function renderQuizSetupHTML() {
+  const optionsHtml = SKILLS.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+  return `
+    <div class="quiz-setup-container">
+      <h2 style="font-family: var(--font-display); margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.5rem;">
+        <span>📝</span> Quiz Configuration
+      </h2>
+      <p style="color: var(--text-muted); margin-bottom: 2rem; font-size: 0.95rem;">
+        Select a skill and a difficulty level to generate a randomized multiple-choice assessment of 5 questions.
+      </p>
+      <form id="quizSetupForm" style="display: flex; flex-direction: column; gap: 1.25rem;">
+        <div class="form-group" style="display: flex; flex-direction: column; gap: 0.5rem;">
+          <label for="quizSkill" style="font-weight: 600; font-size: 0.9rem;">Select Skill</label>
+          <select id="quizSkill" class="form-input" style="background: var(--bg-alt); border: 1px solid var(--border); color: var(--text); padding: 0.75rem; border-radius: var(--radius); font-size: 0.95rem; width: 100%; cursor: pointer;">
+            ${optionsHtml}
+          </select>
+        </div>
+        <div class="form-group" style="display: flex; flex-direction: column; gap: 0.5rem;">
+          <label for="quizDifficulty" style="font-weight: 600; font-size: 0.9rem;">Choose Difficulty</label>
+          <select id="quizDifficulty" class="form-input" style="background: var(--bg-alt); border: 1px solid var(--border); color: var(--text); padding: 0.75rem; border-radius: var(--radius); font-size: 0.95rem; width: 100%; cursor: pointer;">
+            <option value="easy">Easy (Fundamentals)</option>
+            <option value="medium">Medium (Intermediate)</option>
+            <option value="hard">Hard (Advanced)</option>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary btn-full" style="padding: 0.9rem; margin-top: 1rem; font-size: 1rem;">
+          🚀 Start Assessment
+        </button>
+      </form>
+      
+      ${renderQuizHistoryHTML()}
+    </div>
+  `;
+}
+
+function renderQuizHistoryHTML() {
+  const history = JSON.parse(localStorage.getItem('skillboost-quiz-history') || '[]');
+  if (history.length === 0) return '';
+
+  const rows = history.slice(-5).reverse().map(h => {
+    const skillName = getSkillById(h.skill)?.name || h.skill;
+    const dateStr = new Date(h.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    return `
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; font-size: 0.85rem;">
+        <div>
+          <span style="font-weight: 600;">${skillName}</span> 
+          <span style="color: var(--accent); font-size: 0.7rem; padding: 0.1rem 0.4rem; border-radius: 4px; background: var(--surface); margin-left: 0.5rem; text-transform: uppercase;">${h.difficulty}</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 1rem;">
+          <span style="color: ${h.percentage >= 80 ? 'var(--success)' : h.percentage >= 50 ? 'var(--warning)' : '#ef4444'}; font-weight: 700;">${h.score}/${h.total} (${h.percentage}%)</span>
+          <span style="color: var(--text-muted); font-size: 0.75rem;">${dateStr}</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <div class="quiz-history-container" style="margin-top: 2.5rem; border-top: 1px solid var(--border); padding-top: 1.5rem;">
+      <h3 style="font-family: var(--font-display); font-size: 1.1rem; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+        <span>📊</span> Recent Attempts
+      </h3>
+      <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+        ${rows}
+      </div>
+      <button class="btn btn-secondary" id="clearQuizHistoryBtn" style="margin-top: 1rem; font-size: 0.75rem; padding: 0.4rem 0.8rem;">Clear All History</button>
+    </div>
+  `;
+}
+
+function renderQuizActiveHTML() {
+  const q = quizState.questions[quizState.currentIdx];
+  const total = quizState.questions.length;
+  const progressPercent = ((quizState.currentIdx + 1) / total) * 100;
+  const selectedIdx = quizState.answers[quizState.currentIdx];
+
+  const optionsHtml = q.options.map((option, idx) => {
+    const isSelected = selectedIdx === idx;
+    return `
+      <button class="quiz-option-btn ${isSelected ? 'selected' : ''}" data-idx="${idx}" style="width: 100%; text-align: left; padding: 0.9rem 1.25rem; background: ${isSelected ? 'var(--surface-hover)' : 'var(--bg-alt)'}; border: 1px solid ${isSelected ? 'var(--primary)' : 'var(--border)'}; border-radius: var(--radius); color: var(--text); cursor: pointer; transition: all var(--transition); font-size: 0.95rem; font-weight: ${isSelected ? '600' : '400'}; display: flex; align-items: center; gap: 0.75rem;">
+        <span class="option-indicator" style="width: 22px; height: 22px; border-radius: 50%; border: 2px solid ${isSelected ? 'var(--primary)' : 'var(--text-muted)'}; display: inline-flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 700; background: ${isSelected ? 'var(--primary)' : 'transparent'}; color: ${isSelected ? 'white' : 'var(--text-muted)'};">
+          ${String.fromCharCode(65 + idx)}
+        </span>
+        <span>${escapeHTML(option)}</span>
+      </button>
+    `;
+  }).join('');
+
+  return `
+    <div class="quiz-active-container">
+      <div class="quiz-active-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+        <span style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted);">
+          Question ${quizState.currentIdx + 1} of ${total}
+        </span>
+        <div class="quiz-timer" style="display: flex; align-items: center; gap: 0.4rem; font-weight: 700; color: ${quizState.timeRemaining <= 10 ? '#ef4444' : 'var(--accent)'}; font-size: 0.95rem;">
+          <span>⏱️</span> <span id="timerCountdown">${quizState.timeRemaining}s</span>
+        </div>
+      </div>
+      
+      <div class="quiz-progress-bar-container" style="background: var(--border); height: 6px; border-radius: 3px; overflow: hidden; margin-bottom: 2rem;">
+        <div class="quiz-progress-bar-fill" style="background: var(--gradient); width: ${progressPercent}%; height: 100%; transition: width var(--transition);"></div>
+      </div>
+
+      <h3 class="quiz-question-text" style="font-family: var(--font-display); font-size: 1.15rem; font-weight: 600; line-height: 1.5; margin-bottom: 1.5rem;">
+        ${escapeHTML(q.question)}
+      </h3>
+
+      <div class="quiz-options-grid" style="display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 2rem;">
+        ${optionsHtml}
+      </div>
+
+      <div class="quiz-navigation" style="display: flex; justify-content: space-between; align-items: center; gap: 1rem;">
+        <button class="btn btn-secondary" id="quizPrevBtn" ${quizState.currentIdx === 0 ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : ''}>
+          ⬅️ Previous
+        </button>
+        ${quizState.currentIdx === total - 1 ? `
+          <button class="btn btn-primary" id="quizSubmitBtn">
+            Submit Quiz ✔️
+          </button>
+        ` : `
+          <button class="btn btn-primary" id="quizNextBtn">
+            Next ➡️
+          </button>
+        `}
+      </div>
+    </div>
+  `;
+}
+
+function renderQuizResultsHTML() {
+  const total = quizState.questions.length;
+  const score = quizState.answers.reduce((acc, ans, idx) => {
+    return acc + (ans === quizState.questions[idx].correct ? 1 : 0);
+  }, 0);
+  const percentage = Math.round((score / total) * 100);
+
+  const feedback = percentage >= 80 ? { title: '🏆 Outstanding!', desc: 'You have a solid grasp of this skill. Keep up the amazing work!', color: 'var(--success)' }
+                 : percentage >= 50 ? { title: '🚀 Good Effort!', desc: 'You are on the right track! Review the topics below to master this level.', color: 'var(--warning)' }
+                 : { title: '🌱 Keep Learning!', desc: 'Focus on the fundamentals. Read the detailed explanations below to improve your skills.', color: '#ef4444' };
+
+  const reviewListHtml = quizState.questions.map((q, idx) => {
+    const userAns = quizState.answers[idx];
+    const isCorrect = userAns === q.correct;
+    
+    return `
+      <div class="result-review-card" style="background: var(--bg-alt); border: 1px solid ${isCorrect ? 'rgba(52, 211, 153, 0.2)' : 'rgba(239, 68, 68, 0.2)'}; border-left: 4px solid ${isCorrect ? 'var(--success)' : '#ef4444'}; border-radius: var(--radius); padding: 1.25rem; display: flex; flex-direction: column; gap: 0.75rem;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem;">
+          <h4 style="font-size: 0.95rem; font-weight: 600; line-height: 1.4; color: var(--text);">
+            Question ${idx + 1}: ${escapeHTML(q.question)}
+          </h4>
+          <span style="font-size: 0.75rem; font-weight: 700; padding: 0.15rem 0.5rem; border-radius: 4px; background: ${isCorrect ? 'rgba(52, 211, 153, 0.15)' : 'rgba(239, 68, 68, 0.15)'}; color: ${isCorrect ? 'var(--success)' : '#ef4444'}; flex-shrink: 0;">
+            ${isCorrect ? 'Correct' : 'Incorrect'}
+          </span>
+        </div>
+        
+        <div style="display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.85rem; margin-top: 0.5rem;">
+          ${q.options.map((opt, optIdx) => {
+            let itemStyle = 'padding: 0.5rem 0.75rem; border-radius: 6px; display: flex; align-items: center; gap: 0.5rem;';
+            let icon = '•';
+            if (optIdx === q.correct) {
+              itemStyle += ' background: rgba(52, 211, 153, 0.1); border: 1px solid rgba(52, 211, 153, 0.3); color: var(--success); font-weight: 500;';
+              icon = '✓';
+            } else if (optIdx === userAns) {
+              itemStyle += ' background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #ef4444;';
+              icon = '✗';
+            } else {
+              itemStyle += ' color: var(--text-muted);';
+            }
+            return `
+              <div style="${itemStyle}">
+                <span style="font-weight:700;">${icon}</span>
+                <span>${escapeHTML(opt)}</span>
+              </div>
+            `;
+          }).join('')}
+        </div>
+
+        <div style="background: var(--surface); padding: 0.75rem 1rem; border-radius: 8px; font-size: 0.8rem; border: 1px solid var(--border); margin-top: 0.5rem;">
+          <div style="font-weight: 600; color: var(--accent); margin-bottom: 0.25rem;">Explanation:</div>
+          <p style="color: var(--text-muted); line-height: 1.5;">${escapeHTML(q.explanation)}</p>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <div class="quiz-results-container">
+      <div class="results-summary-card" style="text-align: center; padding: 2rem 1.5rem; background: var(--bg-alt); border: 1px solid var(--border); border-radius: var(--radius-lg); margin-bottom: 2.5rem; display: flex; flex-direction: column; align-items: center; gap: 0.8rem;">
+        <div style="font-size: 3rem; line-height: 1;">${feedback.title.split(' ')[0]}</div>
+        <h2 style="font-family: var(--font-display); font-size: 1.4rem; font-weight: 700; color: ${feedback.color};">
+          ${feedback.title}
+        </h2>
+        <div style="font-size: 2.25rem; font-weight: 800; font-family: var(--font-display); color: var(--text);">
+          ${score} / ${total}
+          <span style="font-size: 1.25rem; font-weight: 500; color: var(--text-muted);">(${percentage}%)</span>
+        </div>
+        <p style="color: var(--text-muted); font-size: 0.9rem; max-width: 480px; line-height: 1.6; margin-bottom: 1rem;">
+          ${feedback.desc}
+        </p>
+        <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+          <button class="btn btn-primary" id="quizRetakeBtn">🔄 Take Another Quiz</button>
+          <a href="#skills" class="btn btn-secondary">Explore Skills</a>
+        </div>
+      </div>
+
+      <h3 style="font-family: var(--font-display); font-size: 1.15rem; margin-bottom: 1.25rem;">
+        📝 Question Breakdown & Review
+      </h3>
+      
+      <div class="results-review-list" style="display: flex; flex-direction: column; gap: 1.25rem;">
+        ${reviewListHtml}
+      </div>
+    </div>
+  `;
+}
+
+function renderQuizUI() {
+  const card = document.getElementById('quizCard');
+  if (!card) return;
+
+  if (quizViewMode === 'setup') {
+    card.innerHTML = renderQuizSetupHTML();
+    const form = document.getElementById('quizSetupForm');
+    if (form) {
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const skill = document.getElementById('quizSkill').value;
+        const diff = document.getElementById('quizDifficulty').value;
+        startQuiz(skill, diff);
+      });
+    }
+    const clearBtn = document.getElementById('clearQuizHistoryBtn');
+    if (clearBtn) {
+      clearBtn.addEventListener('click', () => {
+        if (confirm("Are you sure you want to clear your quiz history? This will also reset your skill progress metrics.")) {
+          localStorage.removeItem('skillboost-quiz-history');
+          localStorage.removeItem('skillboost-progress');
+          renderQuizUI();
+        }
+      });
+    }
+  } else if (quizViewMode === 'active') {
+    card.innerHTML = renderQuizActiveHTML();
+    startTimer();
+    
+    const optionBtns = card.querySelectorAll('.quiz-option-btn');
+    optionBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.dataset.idx);
+        quizState.answers[quizState.currentIdx] = idx;
+        renderQuizUI();
+      });
+    });
+
+    const prevBtn = document.getElementById('quizPrevBtn');
+    if (prevBtn) {
+      prevBtn.addEventListener('click', () => {
+        if (quizState.currentIdx > 0) {
+          clearQuizTimer();
+          quizState.currentIdx--;
+          renderQuizUI();
+        }
+      });
+    }
+
+    const nextBtn = document.getElementById('quizNextBtn');
+    if (nextBtn) {
+      nextBtn.addEventListener('click', () => {
+        if (quizState.currentIdx < quizState.questions.length - 1) {
+          clearQuizTimer();
+          if (quizState.answers[quizState.currentIdx] === undefined) {
+            quizState.answers[quizState.currentIdx] = null;
+          }
+          quizState.currentIdx++;
+          renderQuizUI();
+        }
+      });
+    }
+
+    const submitBtn = document.getElementById('quizSubmitBtn');
+    if (submitBtn) {
+      submitBtn.addEventListener('click', () => {
+        if (quizState.answers[quizState.currentIdx] === undefined) {
+          quizState.answers[quizState.currentIdx] = null;
+        }
+        submitQuiz();
+      });
+    }
+  } else if (quizViewMode === 'results') {
+    card.innerHTML = renderQuizResultsHTML();
+    const retakeBtn = document.getElementById('quizRetakeBtn');
+    if (retakeBtn) {
+      retakeBtn.addEventListener('click', () => {
+        quizViewMode = 'setup';
+        renderQuizUI();
+      });
+    }
+  }
+}
+
+function initQuizPage() {
+  renderQuizUI();
+}
+
+/* ===== Doubts & Discussions Logic (LocalStorage backed) ===== */
+function initLocalStorageDoubts() {
+  if (localStorage.getItem('skillboost-doubts')) return;
+
+  const initialDoubts = {
+    html: [
+      {
+        id: 'html-d1',
+        title: "When should I use article vs section tags?",
+        content: "I'm building a blog page and I'm confused about when to use <article> and when to use <section>. Can someone explain the rule of thumb?",
+        author: "alex.student@skillboost.edu",
+        timestamp: Date.now() - 3600000 * 24,
+        replies: [
+          {
+            content: "Use <article> for content that is self-contained and could be distributed independently (like a single blog post). Use <section> to group related content within a page (like a 'Features' or 'Contact' area).",
+            author: "instructor.maria@skillboost.edu",
+            timestamp: Date.now() - 3600000 * 20
+          }
+        ]
+      }
+    ],
+    css: [
+      {
+        id: 'css-d1',
+        title: "Why is my Flexbox item not shrinking below its content size?",
+        content: "I set flex-shrink: 1 but the item remains wider than its container when it has a long string of text inside.",
+        author: "justin.k@skillboost.edu",
+        timestamp: Date.now() - 3600000 * 12,
+        replies: [
+          {
+            content: "Flex items have a default min-width of 'auto'. You need to set 'min-width: 0;' on the flex item to allow it to shrink below its content size.",
+            author: "css.expert@skillboost.edu",
+            timestamp: Date.now() - 3600000 * 8
+          }
+        ]
+      }
+    ],
+    javascript: [
+      {
+        id: 'js-d1',
+        title: "What is the difference between map() and forEach()?",
+        content: "Both iterate over arrays. Why would I choose one over the other?",
+        author: "dev.junior@skillboost.edu",
+        timestamp: Date.now() - 3600000 * 15,
+        replies: [
+          {
+            content: "map() returns a brand new array with the transformed values, whereas forEach() executes a function on each element but returns undefined (used for side effects).",
+            author: "coder.senior@skillboost.edu",
+            timestamp: Date.now() - 3600000 * 10
+          }
+        ]
+      }
+    ],
+    python: [
+      {
+        id: 'py-d1',
+        title: "What does 'if __name__ == \"__main__\":' mean?",
+        content: "I see this at the bottom of almost every Python script. What is its exact purpose?",
+        author: "py.learner@skillboost.edu",
+        timestamp: Date.now() - 3600000 * 30,
+        replies: [
+          {
+            content: "It ensures that the block of code inside it only runs when the script is executed directly from the terminal, and NOT when it is imported as a module in another script.",
+            author: "python.guru@skillboost.edu",
+            timestamp: Date.now() - 3600000 * 25
+          }
+        ]
+      }
+    ],
+    java: [
+      {
+        id: 'java-d1',
+        title: "Why is String immutable in Java?",
+        content: "Why did the language creators decide to make String immutable instead of mutable?",
+        author: "java.coder@skillboost.edu",
+        timestamp: Date.now() - 3600000 * 48,
+        replies: [
+          {
+            content: "Security (parameters like network connections/file paths are strings), Caching (String Pool saves memory), and Thread-safety (immutable objects can be shared safely across threads).",
+            author: "java.architect@skillboost.edu",
+            timestamp: Date.now() - 3600000 * 40
+          }
+        ]
+      }
+    ],
+    c: [
+      {
+        id: 'c-d1',
+        title: "What is the difference between char *str and char str[]?",
+        content: "When declaring a string, one uses a pointer and the other an array. Is there a memory difference?",
+        author: "c.student@skillboost.edu",
+        timestamp: Date.now() - 3600000 * 5,
+        replies: [
+          {
+            content: "Yes! 'char *str' creates a pointer to a string literal stored in read-only memory (cannot be modified). 'char str[]' allocates a mutable array of characters on the stack/globals.",
+            author: "systems.dev@skillboost.edu",
+            timestamp: Date.now() - 3600000 * 3
+          }
+        ]
+      }
+    ],
+    cpp: [
+      {
+        id: 'cpp-d1',
+        title: "When should I use std::unique_ptr vs std::shared_ptr?",
+        content: "Is unique_ptr always preferred? When is shared_ptr required?",
+        author: "cpp.dev@skillboost.edu",
+        timestamp: Date.now() - 3600000 * 9,
+        replies: [
+          {
+            content: "Always prefer std::unique_ptr by default as it has zero runtime overhead. Use std::shared_ptr only when a resource has multiple owners and its lifetime must span across them all.",
+            author: "modern.cpp@skillboost.edu",
+            timestamp: Date.now() - 3600000 * 6
+          }
+        ]
+      }
+    ],
+    sql: [
+      {
+        id: 'sql-d1',
+        title: "What is the difference between WHERE and HAVING?",
+        content: "They both filter records, but I get errors when I mix them up with GROUP BY.",
+        author: "query.novice@skillboost.edu",
+        timestamp: Date.now() - 3600000 * 18,
+        replies: [
+          {
+            content: "WHERE filters rows BEFORE grouping occurs. HAVING filters groups AFTER GROUP BY has collapsed rows, meaning you can use aggregate functions (like SUM, COUNT) inside HAVING.",
+            author: "db.admin@skillboost.edu",
+            timestamp: Date.now() - 3600000 * 14
+          }
+        ]
+      }
+    ],
+    ai: [
+      {
+        id: 'ai-d1',
+        title: "What is the difference between epoch, batch size, and iterations?",
+        content: "I get confused by these parameters during neural network training. Can someone define them simply?",
+        author: "ai.student@skillboost.edu",
+        timestamp: Date.now() - 3600000 * 22,
+        replies: [
+          {
+            content: "An Epoch is one full pass through the entire dataset. Batch Size is the number of samples processed before updating weights. Iterations is the number of batches needed to complete one epoch.",
+            author: "ml.researcher@skillboost.edu",
+            timestamp: Date.now() - 3600000 * 19
+          }
+        ]
+      }
+    ],
+    'data-science': [
+      {
+        id: 'ds-d1',
+        title: "How do you handle highly imbalanced datasets?",
+        content: "I'm working on fraud detection where positive cases are only 0.5% of the data. Accuracy is 99.5% even with a dummy model. What should I do?",
+        author: "data.sci@skillboost.edu",
+        timestamp: Date.now() - 3600000 * 36,
+        replies: [
+          {
+            content: "Do not use Accuracy. Use Precision, Recall, F1-Score, or ROC-AUC. You can also apply SMOTE (oversampling the minority class), downsampling, or adjust class weights in the loss function.",
+            author: "stats.pro@skillboost.edu",
+            timestamp: Date.now() - 3600000 * 32
+          }
+        ]
+      }
+    ],
+    'data-analytics': [
+      {
+        id: 'da-d1',
+        title: "How do I create a dynamic calendar table in Power BI?",
+        content: "Should I write it in DAX or generate it in Power Query? Which is better for performance?",
+        author: "analyst.sam@skillboost.edu",
+        timestamp: Date.now() - 3600000 * 20,
+        replies: [
+          {
+            content: "It is generally better to create calendar tables in Power Query (M code) because it compresses better and keeps the model clean, though DAX CALENDARAUTO() is fine for quick setups.",
+            author: "bi.expert@skillboost.edu",
+            timestamp: Date.now() - 3600000 * 16
+          }
+        ]
+      }
+    ],
+    'web-dev': [
+      {
+        id: 'wd-d1',
+        title: "What is the difference between LocalStorage and SessionStorage?",
+        content: "Both store key-value pairs in the browser, but how do they handle persistence?",
+        author: "web.learner@skillboost.edu",
+        timestamp: Date.now() - 3600000 * 10,
+        replies: [
+          {
+            content: "LocalStorage persists indefinitely until cleared manually. SessionStorage only persists as long as the tab/window is open, and is wiped once the tab is closed.",
+            author: "fullstack.dev@skillboost.edu",
+            timestamp: Date.now() - 3600000 * 8
+          }
+        ]
+      }
+    ],
+    cybersecurity: [
+      {
+        id: 'sec-d1',
+        title: "What is the difference between hashing and encryption?",
+        content: "Are they both used to hide passwords? Can I decrypt a hash?",
+        author: "sec.newbie@skillboost.edu",
+        timestamp: Date.now() - 3600000 * 28,
+        replies: [
+          {
+            content: "Hashing is a one-way function (cannot be decrypted, e.g. SHA-256 for passwords). Encryption is a two-way function designed to be decrypted later using keys (e.g. AES for messages).",
+            author: "infosec.pro@skillboost.edu",
+            timestamp: Date.now() - 3600000 * 24
+          }
+        ]
+      }
+    ],
+    cloud: [
+      {
+        id: 'cloud-d1',
+        title: "What is the difference between a container and a virtual machine?",
+        content: "Both run isolated software, but how do they share hardware?",
+        author: "cloud.student@skillboost.edu",
+        timestamp: Date.now() - 3600000 * 14,
+        replies: [
+          {
+            content: "Virtual Machines package a full guest OS, hypervisor, and application (heavy). Containers share the host OS kernel and package only the application and libraries (lightweight).",
+            author: "devops.lead@skillboost.edu",
+            timestamp: Date.now() - 3600000 * 11
+          }
+        ]
+      }
+    ]
+  };
+
+  localStorage.setItem('skillboost-doubts', JSON.stringify(initialDoubts));
+}
+
+function renderDoubtsBoard(skillId) {
+  const container = document.getElementById('doubtsBoard');
+  if (!container) return;
+
+  const doubtsDb = JSON.parse(localStorage.getItem('skillboost-doubts') || '{}');
+  const skillDoubts = doubtsDb[skillId] || [];
+
+  let html = '';
+
+  // 1. Post Question Form
+  if (currentUser) {
+    html += `
+      <div class="post-doubt-card" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 1.5rem; margin-bottom: 2.5rem;">
+        <h3 style="font-family: var(--font-display); font-size: 1.1rem; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+          <span>🙋</span> Ask a New Doubt
+        </h3>
+        <form id="postDoubtForm" style="display: flex; flex-direction: column; gap: 1rem;">
+          <input type="text" id="doubtTitle" class="form-input" style="background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 0.75rem; border-radius: var(--radius); font-size: 0.9rem;" required placeholder="Brief title of your doubt (e.g. Understanding semantic tags)">
+          <textarea id="doubtContent" class="form-input" rows="3" style="background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 0.75rem; border-radius: var(--radius); font-size: 0.9rem; resize: vertical;" required placeholder="Describe what you are struggling with in detail..."></textarea>
+          <button type="submit" class="btn btn-primary" style="align-self: flex-start; padding: 0.6rem 1.2rem; font-size: 0.85rem;">Post Question</button>
+        </form>
+      </div>
+    `;
+  } else {
+    html += `
+      <div class="doubts-auth-prompt" style="text-align: center; padding: 2rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); margin-bottom: 2.5rem; display: flex; flex-direction: column; align-items: center; gap: 1rem;">
+        <p style="color: var(--text-muted); font-size: 0.95rem; margin: 0;">Sign in to ask a new doubt or reply to other students.</p>
+        <button class="btn btn-primary" id="doubtsSignInBtn" style="padding: 0.5rem 1.2rem; font-size: 0.85rem;">Sign In to Participate</button>
+      </div>
+    `;
+  }
+
+  // 2. Questions List
+  if (skillDoubts.length === 0) {
+    html += `
+      <div style="text-align: center; padding: 3rem 1.5rem; color: var(--text-muted);">
+        <p style="font-size: 1rem; margin-bottom: 0.5rem;">No doubts posted yet for this skill.</p>
+        <p style="font-size: 0.8rem;">Be the first to ask a question!</p>
+      </div>
+    `;
+  } else {
+    const doubtItemsHtml = skillDoubts.map((doubt) => {
+      const dateStr = new Date(doubt.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      const avatarInitial = doubt.author ? doubt.author.charAt(0).toUpperCase() : 'U';
+
+      const repliesHtml = (doubt.replies || []).map(reply => {
+        const repAvatar = reply.author ? reply.author.charAt(0).toUpperCase() : 'U';
+        const repDate = new Date(reply.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        return `
+          <div class="doubt-reply-item" style="display: flex; gap: 0.75rem; padding: 1rem; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); margin-top: 0.75rem;">
+            <span style="flex-shrink: 0; width: 30px; height: 30px; border-radius: 50%; background: var(--surface); color: var(--accent); display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 700; border: 1px solid var(--border);">
+              ${repAvatar}
+            </span>
+            <div style="flex-grow: 1;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
+                <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-muted);">${reply.author}</span>
+                <span style="font-size: 0.7rem; color: var(--text-muted);">${repDate}</span>
+              </div>
+              <p style="font-size: 0.85rem; color: var(--text); white-space: pre-line; margin: 0; line-height: 1.5;">${escapeHTML(reply.content)}</p>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      let replyFormHtml = '';
+      if (currentUser) {
+        replyFormHtml = `
+          <form class="doubt-reply-form" data-doubt-id="${doubt.id}" style="display: flex; gap: 0.5rem; margin-top: 1rem; align-items: center;">
+            <input type="text" class="form-input reply-input" style="flex-grow: 1; background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 0.5rem 0.75rem; border-radius: 8px; font-size: 0.85rem;" required placeholder="Write a helpful response...">
+            <button type="submit" class="btn btn-primary" style="padding: 0.5rem 1rem; font-size: 0.8rem; flex-shrink: 0;">Reply</button>
+          </form>
+        `;
+      }
+
+      return `
+        <div class="doubt-card" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 1.5rem; margin-bottom: 1.5rem; display: flex; flex-direction: column; gap: 1rem;">
+          <div style="display: flex; gap: 0.75rem; align-items: flex-start;">
+            <span style="flex-shrink: 0; width: 36px; height: 36px; border-radius: 50%; background: var(--gradient); color: white; display: flex; align-items: center; justify-content: center; font-size: 0.9rem; font-weight: 700;">
+              ${avatarInitial}
+            </span>
+            <div style="flex-grow: 1;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
+                <span style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted);">${doubt.author}</span>
+                <span style="font-size: 0.75rem; color: var(--text-muted);">${dateStr}</span>
+              </div>
+              <h4 style="font-size: 1.05rem; font-weight: 600; color: var(--text); margin-bottom: 0.5rem; line-height: 1.4;">${escapeHTML(doubt.title)}</h4>
+              <p style="font-size: 0.9rem; color: var(--text-muted); white-space: pre-line; margin: 0; line-height: 1.6;">${escapeHTML(doubt.content)}</p>
+            </div>
+          </div>
+          
+          <div class="doubt-replies-section" style="border-top: 1px solid var(--border); padding-top: 0.5rem; margin-left: 2.75rem;">
+            ${repliesHtml ? `
+              <div style="font-size: 0.8rem; font-weight: 600; color: var(--accent); margin-bottom: 0.25rem;">Replies (${doubt.replies.length}):</div>
+              ${repliesHtml}
+            ` : '<div style="font-size: 0.8rem; color: var(--text-muted); font-style: italic; margin-top: 0.5rem;">No replies yet.</div>'}
+            ${replyFormHtml}
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    html += `<div class="doubts-list">${doubtItemsHtml}</div>`;
+  }
+
+  container.innerHTML = html;
+
+  const daBtn = document.getElementById('doubtsSignInBtn');
+  if (daBtn) {
+    daBtn.addEventListener('click', () => {
+      openAuthModal('signin');
+    });
+  }
+
+  const postForm = document.getElementById('postDoubtForm');
+  if (postForm) {
+    postForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const title = document.getElementById('doubtTitle').value.trim();
+      const content = document.getElementById('doubtContent').value.trim();
+      if (!title || !content) return;
+
+      const newDoubt = {
+        id: `${skillId}-d-${Date.now()}`,
+        title,
+        content,
+        author: currentUser.email,
+        timestamp: Date.now(),
+        replies: []
+      };
+
+      const db = JSON.parse(localStorage.getItem('skillboost-doubts') || '{}');
+      if (!db[skillId]) db[skillId] = [];
+      db[skillId].push(newDoubt);
+      localStorage.setItem('skillboost-doubts', JSON.stringify(db));
+
+      renderDoubtsBoard(skillId);
+    });
+  }
+
+  const replyForms = container.querySelectorAll('.doubt-reply-form');
+  replyForms.forEach(form => {
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const doubtId = form.dataset.doubtId;
+      const input = form.querySelector('.reply-input');
+      const content = input.value.trim();
+      if (!content) return;
+
+      const db = JSON.parse(localStorage.getItem('skillboost-doubts') || '{}');
+      const doubts = db[skillId] || [];
+      const doubt = doubts.find(d => d.id === doubtId);
+      if (doubt) {
+        if (!doubt.replies) doubt.replies = [];
+        doubt.replies.push({
+          content,
+          author: currentUser.email,
+          timestamp: Date.now()
+        });
+        localStorage.setItem('skillboost-doubts', JSON.stringify(db));
+      }
+
+      renderDoubtsBoard(skillId);
+    });
+  });
 }
 
 /* ===== Init ===== */
@@ -944,7 +1861,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   initSupabase();
   await checkAuthSession();
   setupAuthListener();
+  initLocalStorageDoubts();
 
   updateAuthUI();
   initRouter();
 });
+

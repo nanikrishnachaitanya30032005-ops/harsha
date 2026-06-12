@@ -1707,4 +1707,77 @@ img {
   }
 }
 
+/* ===== Quiz & Assessment Styles ===== */
+.quiz-main {
+  background: radial-gradient(ellipse 60% 50% at 50% 0%, rgba(99, 102, 241, 0.12), transparent);
+}
+
+.quiz-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 2.25rem;
+  box-shadow: var(--shadow);
+}
+
+.quiz-option-btn {
+  font-family: var(--font);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.quiz-option-btn:hover {
+  background: var(--surface-hover) !important;
+  border-color: var(--primary-light) !important;
+  transform: translateX(4px);
+}
+
+.quiz-option-btn.selected {
+  background: rgba(99, 102, 241, 0.15) !important;
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 12px rgba(99, 102, 241, 0.2);
+}
+
+.quiz-option-btn:active {
+  transform: scale(0.995);
+}
+
+.result-review-card {
+  transition: transform var(--transition);
+}
+
+.result-review-card:hover {
+  transform: translateY(-2px);
+}
+
+/* ===== Doubts Board Styles ===== */
+.doubt-card {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transition: transform var(--transition), border-color var(--transition);
+}
+
+.doubt-card:hover {
+  border-color: var(--border) !important;
+}
+
+.post-doubt-card {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.doubt-reply-item {
+  transition: background-color var(--transition);
+}
+
+.doubt-reply-item:hover {
+  background: var(--surface) !important;
+}
+
+.reply-input:focus,
+.post-doubt-card input:focus,
+.post-doubt-card textarea:focus {
+  outline: none;
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 8px rgba(99, 102, 241, 0.25);
+}
+
+
 
